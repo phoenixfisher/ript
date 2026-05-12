@@ -6,7 +6,7 @@ struct RiptApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .modelContainer(for: [Day.self, Workout.self, Reflection.self, BodyMetric.self, MealIdea.self, Badge.self])
+                .modelContainer(for: [Day.self, Workout.self, TrainingSession.self, Reflection.self, BodyMetric.self, MealIdea.self, Badge.self])
                 .preferredColorScheme(.dark) // iPhone-first, dark mode friendly by default
         }
     }

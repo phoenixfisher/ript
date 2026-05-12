@@ -31,26 +31,3 @@ final class HomeViewModel: ObservableObject {
 
     func resetQuote() { dailyQuote = Self.randomQuote() }
 }
-
-@MainActor
-final class WorkoutTimerViewModel: ObservableObject {
-    @Published var remaining: Int = 60
-    @Published var isRunning: Bool = false
-    private var timer: Timer?
-
-    func start(seconds: Int = 60) {
-        remaining = seconds
-        isRunning = true
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] t in
-            guard let self = self else { return }
-            if self.remaining > 0 { self.remaining -= 1 } else { self.stop() }
-        }
-    }
-
-    func stop() {
-        isRunning = false
-        timer?.invalidate()
-        timer = nil
-    }
-}

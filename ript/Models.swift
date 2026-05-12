@@ -75,6 +75,72 @@ struct Exercise: Codable, Hashable, Identifiable {
     var repsDescription: String
 }
 
+// MARK: - Training Plan (SwiftData)
+@Model
+final class TrainingSession {
+    @Attribute(.unique) var id: UUID
+    var date: Date
+    var weekLabel: String
+    var title: String
+    var focus: String
+    var segments: [TrainingSegment]
+    var isCompleted: Bool
+    var completedAt: Date?
+    var effortRating: String?
+
+    init(
+        id: UUID = UUID(),
+        date: Date,
+        weekLabel: String,
+        title: String,
+        focus: String,
+        segments: [TrainingSegment],
+        isCompleted: Bool = false,
+        completedAt: Date? = nil,
+        effortRating: String? = nil
+    ) {
+        self.id = id
+        self.date = Calendar.current.startOfDay(for: date)
+        self.weekLabel = weekLabel
+        self.title = title
+        self.focus = focus
+        self.segments = segments
+        self.isCompleted = isCompleted
+        self.completedAt = completedAt
+        self.effortRating = effortRating
+    }
+}
+
+struct TrainingSegment: Codable, Hashable, Identifiable {
+    var id: UUID = UUID()
+    var title: String
+    var detail: String
+    var kind: TrainingSegmentKind
+    var priority: TrainingSegmentPriority
+    var isCompleted: Bool = false
+}
+
+enum TrainingSegmentKind: String, Codable, CaseIterable, Identifiable {
+    case swim
+    case bike
+    case run
+    case brick
+    case core
+    case strength
+    case mobility
+    case rest
+
+    var id: String { rawValue }
+}
+
+enum TrainingSegmentPriority: String, Codable, CaseIterable, Identifiable {
+    case required
+    case recommended
+    case optional
+
+    var id: String { rawValue }
+}
+
 // MARK: - Reflection (SwiftData)
 @Model
 final class Reflection {
@@ -113,11 +179,39 @@ final class MealIdea {
     @Attribute(.unique) var id: UUID
     var title: String
     var category: String // Breakfast, Lunch, Dinner, Snacks
+    var proteinGrams: Int = 0
+    var prepMinutes: Int = 0
+    var goalTags: [String] = []
+    var ingredients: [String] = []
+    var steps: [String] = []
+    var bestTiming: String = ""
+    var notes: String = ""
+    var isFavorite: Bool = false
 
-    init(id: UUID = UUID(), title: String, category: String) {
+    init(
+        id: UUID = UUID(),
+        title: String,
+        category: String,
+        proteinGrams: Int = 0,
+        prepMinutes: Int = 0,
+        goalTags: [String] = [],
+        ingredients: [String] = [],
+        steps: [String] = [],
+        bestTiming: String = "",
+        notes: String = "",
+        isFavorite: Bool = false
+    ) {
         self.id = id
         self.title = title
         self.category = category
+        self.proteinGrams = proteinGrams
+        self.prepMinutes = prepMinutes
+        self.goalTags = goalTags
+        self.ingredients = ingredients
+        self.steps = steps
+        self.bestTiming = bestTiming
+        self.notes = notes
+        self.isFavorite = isFavorite
     }
 }
 
