@@ -1,0 +1,82 @@
+import SwiftUI
+
+struct ProgressRing: View {
+    var progress: Double // 0...1
+    var gradient: Gradient = Gradient(colors: [Color.green, Color.blue])
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.15), lineWidth: 12)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(AngularGradient(gradient: gradient, center: .center), style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.5, dampingFraction: 0.8), value: progress)
+        }
+        .frame(width: 120, height: 120)
+        .accessibilityLabel("Daily progress")
+        .accessibilityValue("\(Int(progress * 100)) percent")
+    }
+}
+
+struct StreakBadge: View {
+    var count: Int
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "flame.fill").foregroundStyle(.orange)
+            Text("\(count)")
+                .font(.title2).bold()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+}
+
+struct LevelTag: View {
+    var title: String
+    var body: some View {
+        Text(title)
+            .font(.footnote).bold()
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(LinearGradient(colors: [.blue.opacity(0.6), .green.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+    }
+}
+
+struct ChecklistRow: View {
+    var title: String
+    var isChecked: Bool
+    var onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack {
+                Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(isChecked ? .green : .secondary)
+                    .symbolEffect(.bounce, value: isChecked)
+                Text(title)
+                    .font(.headline)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct Heatmap: View {
+    var values: [Date: Int] // 0..n per day
+    var body: some View {
+        let days = (0..<42).compactMap { Calendar.current.date(byAdding: .day, value: -$0, to: Date()) }.reversed()
+        LazyVGrid(columns: Array(repeating: GridItem(.fixed(16), spacing: 4), count: 7), spacing: 4) {
+            ForEach(days, id: \.self) { d in
+                let v = values[Calendar.current.startOfDay(for: d)] ?? 0
+                Rectangle()
+                    .fill(Color.green.opacity(min(0.1 + Double(v) * 0.2, 1)))
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+        }
+    }
+}

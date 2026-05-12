@@ -1,0 +1,13 @@
+import SwiftUI
+import SwiftData
+
+@main
+struct RiptApp: App {
+    var body: some Scene {
+        WindowGroup {
+            RootView()
+                .modelContainer(for: [Day.self, Workout.self, Reflection.self, BodyMetric.self, MealIdea.self, Badge.self])
+                .preferredColorScheme(.dark) // iPhone-first, dark mode friendly by default
+        }
+    }
+}
