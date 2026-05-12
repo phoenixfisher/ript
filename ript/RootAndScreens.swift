@@ -187,8 +187,10 @@ struct WorkoutDetail: View {
                     Text("Simple Timer").font(.headline)
                     Text("\(timerVM.remaining)s").font(.largeTitle).monospacedDigit()
                     HStack {
-                        Button(timerVM.isRunning ? "Stop" : "Start") {
+                        Button {
                             timerVM.isRunning ? timerVM.stop() : timerVM.start(seconds: 60)
+                        } label: {
+                            Text(timerVM.isRunning ? "Stop" : "Start").foregroundStyle(.black)
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -203,7 +205,7 @@ struct WorkoutDetail: View {
                     Haptics.success()
                 } label: {
                     Label("Mark Workout Complete", systemImage: "checkmark.seal.fill")
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity).foregroundStyle(.black)
                 }
                 .buttonStyle(.borderedProminent)
             }
