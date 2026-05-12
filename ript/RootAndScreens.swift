@@ -239,9 +239,16 @@ struct ReflectionScreen: View {
         return #Predicate { $0.date == todayStart }
     }())
     private var todayArray: [Reflection]
+
+    // Local UI state
     @State private var didWin: Bool = false
     @State private var mood: Int = 3
     @State private var note: String = ""
+    @State private var showSavedToast: Bool = false
+    @State private var isDirty: Bool = false
+
+    // For history listing
+    @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
 
     init() {}
 
@@ -252,18 +259,134 @@ struct ReflectionScreen: View {
         return r
     }
 
+    private let noteLimit = 280
+
     var body: some View {
         Form {
-            Toggle("Did I win today?", isOn: Binding(get: { today.didWin }, set: { today.didWin = $0; save() }))
-            Picker("Mood", selection: Binding(get: { today.mood }, set: { today.mood = $0; save() })) {
-                ForEach(1...5, id: \.self) { i in Text("\(i)") }
+            Section("Today") {
+                Toggle("Did I win today?", isOn: Binding(get: { didWin }, set: { new in
+                    didWin = new
+                    updateModel { $0.didWin = new }
+                }))
+
+                Picker("Mood", selection: Binding(get: { mood }, set: { new in
+                    mood = new
+                    updateModel { $0.mood = new }
+                })) {
+                    ForEach(1...5, id: \.self) { i in Text("\(i)") }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    TextField("Short journal", text: Binding(get: { note }, set: { new in
+                        let trimmed = String(new.prefix(noteLimit))
+                        note = trimmed
+                        updateModel { $0.note = trimmed }
+                    }), axis: .vertical)
+                    .lineLimit(3...8)
+
+                    HStack {
+                        Spacer()
+                        Text("\(note.count)/\(noteLimit)")
+                            .font(.caption)
+                            .foregroundStyle(note.count >= noteLimit ? .orange : .secondary)
+                    }
+                }
+
+                HStack {
+                    Button(role: .destructive) {
+                        resetToday()
+                    } label: {
+                        Label("Reset", systemImage: "arrow.counterclockwise")
+                    }
+
+                    Spacer()
+
+                    Button {
+                        save(force: true)
+                    } label: {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!isDirty)
+                }
             }
-            TextField("Short journal", text: Binding(get: { today.note }, set: { today.note = $0; save() }), axis: .vertical)
+
+            if !recentReflections.isEmpty {
+                Section("Recent Reflections") {
+                    ForEach(recentReflections) { r in
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text(r.date.formatted(date: .abbreviated, time: .omitted))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                Spacer()
+                                Label("\(r.mood)", systemImage: "face.smiling")
+                                    .labelStyle(.iconOnly)
+                                    .foregroundStyle(.yellow)
+                            }
+                            Text(r.note).font(.body)
+                        }
+                    }
+                }
+            }
         }
         .navigationTitle("Daily Reflection")
+        .task { hydrateFromModel() }
+        .onChange(of: todayArray.count) { hydrateFromModel() }
+        .overlay(alignment: .bottom) {
+            if showSavedToast {
+                Text("Saved")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.default, value: showSavedToast)
     }
 
-    private func save() { try? context.save() }
+    private var recentReflections: [Reflection] {
+        reflections.filter { $0.id != today.id }.prefix(5).map { $0 }
+    }
+
+    // MARK: - Model Sync
+    private func hydrateFromModel() {
+        // Load today's values into local state
+        didWin = today.didWin
+        mood = today.mood
+        note = today.note
+        isDirty = false
+    }
+
+    private func updateModel(_ mutate: (inout Reflection) -> Void) {
+        var t = today
+        mutate(&t)
+        isDirty = true
+        // Debounced autosave after small delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            save()
+        }
+    }
+
+    private func resetToday() {
+        today.didWin = false
+        today.mood = 3
+        today.note = ""
+        save(force: true)
+        hydrateFromModel()
+    }
+
+    // Save with feedback and haptics
+    private func save(force: Bool = false) {
+        guard force || isDirty else { return }
+        try? context.save()
+        isDirty = false
+        Haptics.success()
+        showSavedToast = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            showSavedToast = false
+        }
+    }
 }
 
 // MARK: - Stats
@@ -319,4 +442,3 @@ struct StatsScreen: View {
         return Double(done) / Double(total)
     }
 }
-
