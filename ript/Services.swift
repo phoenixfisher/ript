@@ -19,8 +19,8 @@ struct NotificationScheduler {
         center.removeAllPendingNotificationRequests()
 
         let items: [(String, Int, Int)] = [
-            ("Win the first 10 seconds.", 8, 0),
-            ("Did you win today?", 20, 30)
+            ("Win the first 10 seconds.", 6, 0),
+            ("Did you win today?", 22, 30)
         ]
 
         for (body, hour, minute) in items {
