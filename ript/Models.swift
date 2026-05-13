@@ -3,21 +3,21 @@ import SwiftData
 
 // MARK: - HabitType
 enum HabitType: String, Codable, CaseIterable, Identifiable {
-    case proteinEveryMeal = "Protein every meal"
-    case intentionalTreat = "One intentional treat"
-    case coreOrWorkout = "Core or workout"
-    case stoppedAtNotHungry = "Stopped eating at not hungry"
     case gotUpImmediately = "Got up immediately"
+    case proteinEveryMeal = "Protein every meal"
+    case stoppedAtNotHungry = "Stopped eating at not hungry"
+    case coreOrWorkout = "Core or workout"
+    case intentionalTreat = "One intentional treat"
 
     var id: String { rawValue }
 
     var xpReward: Int {
         switch self {
-        case .proteinEveryMeal: return 20
-        case .intentionalTreat: return 10
-        case .coreOrWorkout: return 30
-        case .stoppedAtNotHungry: return 15
         case .gotUpImmediately: return 15
+        case .proteinEveryMeal: return 20
+        case .stoppedAtNotHungry: return 15
+        case .coreOrWorkout: return 30
+        case .intentionalTreat: return 10
         }
     }
 }

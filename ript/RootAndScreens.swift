@@ -1,24 +1,38 @@
 import SwiftUI
 import SwiftData
 
+enum AppTab: Hashable {
+    case home
+    case workouts
+    case meals
+    case reflect
+    case coach
+}
+
 struct RootView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
     @StateObject private var appVM = AppViewModel()
     @StateObject private var homeVM = HomeViewModel()
+    @State private var selectedTab: AppTab = .home
 
     var body: some View {
-        TabView {
-            HomeScreen(appVM: appVM, homeVM: homeVM)
+        TabView(selection: $selectedTab) {
+            HomeScreen(appVM: appVM, homeVM: homeVM, selectedTab: $selectedTab)
                 .tabItem { Label("Home", systemImage: "house.fill") }
+                .tag(AppTab.home)
             WorkoutsScreen()
                 .tabItem { Label("Workouts", systemImage: "dumbbell.fill") }
+                .tag(AppTab.workouts)
             MealsScreen()
                 .tabItem { Label("Meals", systemImage: "fork.knife") }
+                .tag(AppTab.meals)
             ReflectionScreen()
                 .tabItem { Label("Reflect", systemImage: "moon.stars.fill") }
+                .tag(AppTab.reflect)
             CoachScreen()
                 .tabItem { Label("Coach", systemImage: "sparkles") }
+                .tag(AppTab.coach)
         }
         .scrollDismissesKeyboard(.interactively)
         .task {
@@ -37,13 +51,19 @@ struct HomeScreen: View {
         return #Predicate { $0.date == todayStart }
     }())
     private var todayArray: [Day]
+    @Query(sort: \Day.date, order: .reverse) private var allDays: [Day]
+    @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
+    @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
+    @Query(sort: \MealIdea.title) private var meals: [MealIdea]
 
     var appVM: AppViewModel
     @ObservedObject var homeVM: HomeViewModel
+    @Binding var selectedTab: AppTab
 
-    init(appVM: AppViewModel, homeVM: HomeViewModel) {
+    init(appVM: AppViewModel, homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
         self.appVM = appVM
         self.homeVM = homeVM
+        self._selectedTab = selectedTab
     }
 
     private var today: Day {
@@ -56,14 +76,14 @@ struct HomeScreen: View {
     private var progress: Double { Double(today.completedHabits.count) / Double(HabitType.allCases.count) }
 
     private var totalXP: Int {
-        (try? context.fetch(FetchDescriptor<Day>()))?.reduce(0) { $0 + $1.xpEarned } ?? 0
+        allDays.reduce(0) { $0 + $1.xpEarned }
     }
 
     private var streak: Int {
         var count = 0
         var date = Calendar.current.startOfDay(for: Date())
         while true {
-            if let d = try? context.fetch(FetchDescriptor<Day>(predicate: #Predicate { $0.date == date })).first, d.completedHabits.isEmpty == false {
+            if let d = allDays.first(where: { $0.date == date }), d.completedHabits.isEmpty == false {
                 count += 1
                 date = Calendar.current.date(byAdding: .day, value: -1, to: date)!
             } else { break }
@@ -71,41 +91,137 @@ struct HomeScreen: View {
         return count
     }
 
+    private var todaysSession: TrainingSession? {
+        trainingSessions.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    private var nextSession: TrainingSession? {
+        let today = Calendar.current.startOfDay(for: Date())
+        return trainingSessions.first { $0.date >= today }
+    }
+
+    private var activeSession: TrainingSession? {
+        todaysSession ?? nextSession
+    }
+
+    private var todaysReflection: Reflection? {
+        reflections.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    private var coachContext: CoachContext {
+        let anchor = activeSession
+        let weekSessions = anchor.map { session in
+            trainingSessions.filter { $0.weekLabel == session.weekLabel }
+        } ?? []
+        let fuelProfile = FuelProfile.profile(for: anchor)
+        let mealPlan = SuggestedMealPlan.build(meals: meals, profile: fuelProfile, session: anchor)
+
+        return CoachContext(
+            todaysSession: todaysSession,
+            nextSession: nextSession,
+            todaysReflection: todaysReflection,
+            todaysDay: today,
+            weekSessions: weekSessions,
+            fuelProfile: fuelProfile,
+            mealPlan: mealPlan
+        )
+    }
+
+    private var fuelProfile: FuelProfile {
+        coachContext.fuelProfile
+    }
+
+    private var nextAction: HomeNextAction {
+        if let session = activeSession, session.isCompleted == false {
+            return HomeNextAction(
+                title: "Start Workout",
+                subtitle: session.requiredSummary,
+                systemImage: "figure.run",
+                tab: .workouts,
+                tint: .green
+            )
+        }
+
+        if today.completedHabits.contains(.proteinEveryMeal) == false {
+            return HomeNextAction(
+                title: "Review Meals",
+                subtitle: fuelProfile.title,
+                systemImage: "fork.knife",
+                tab: .meals,
+                tint: .orange
+            )
+        }
+
+        if todaysReflection == nil || (todaysReflection?.note.isEmpty == true && todaysReflection?.win.isEmpty == true) {
+            return HomeNextAction(
+                title: "Reflect Tonight",
+                subtitle: "Log the win, hard moment, and tomorrow focus.",
+                systemImage: "moon.stars.fill",
+                tab: .reflect,
+                tint: .purple
+            )
+        }
+
+        return HomeNextAction(
+            title: "Ask Coach",
+            subtitle: "Get a quick adjustment for the rest of the day.",
+            systemImage: "sparkles",
+            tab: .coach,
+            tint: .cyan
+        )
+    }
+
+    private var workoutsCompletedThisWeek: Int {
+        coachContext.weekSessions.filter(\.isCompleted).count
+    }
+
+    private var journalEntriesThisWeek: Int {
+        guard let week = Calendar.current.dateInterval(of: .weekOfYear, for: Date()) else { return 0 }
+        return reflections.filter { week.contains($0.date) }.count
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    HStack {
-                        StreakBadge(count: streak)
-                        Spacer()
-                        LevelTag(title: appVM.level(for: totalXP).title)
+                VStack(alignment: .leading, spacing: 20) {
+                    HomeHeader(
+                        date: Date(),
+                        streak: streak,
+                        levelTitle: appVM.level(for: totalXP).title
+                    )
+
+                    HomeScoreCard(
+                        progress: progress,
+                        completedWins: today.completedHabits.count,
+                        totalWins: HabitType.allCases.count,
+                        xp: today.xpEarned,
+                        quote: homeVM.dailyQuote
+                    )
+                    
+                    DailyWinsCard(today: today, onToggle: toggle)
+
+                    HomeTodayPlanCard(
+                        session: activeSession,
+                        fuelProfile: fuelProfile,
+                        readiness: coachContext.readiness
+                    )
+                    
+                    HomeNextActionCard(action: nextAction) {
+                        selectedTab = nextAction.tab
                     }
 
-                    VStack(spacing: 16) {
-                        ProgressRing(progress: progress)
-                        Text(homeVM.dailyQuote)
-                            .font(.title2).bold()
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                            .transition(.opacity.combined(with: .scale))
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Daily Wins").font(.title2).bold()
-                        ForEach(HabitType.allCases) { habit in
-                            ChecklistRow(title: habit.rawValue, isChecked: today.completedHabits.contains(habit)) {
-                                toggle(habit)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    HomeMomentumCard(
+                        streak: streak,
+                        workoutsCompleted: workoutsCompletedThisWeek,
+                        journalEntries: journalEntriesThisWeek
+                    )
 
                     if today.perfectDay {
                         Text("Perfect Day! +50 XP")
                             .font(.headline)
                             .foregroundStyle(.green)
                             .symbolEffect(.bounce)
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .padding()
@@ -116,6 +232,7 @@ struct HomeScreen: View {
     }
 
     private func toggle(_ habit: HabitType) {
+        let wasPerfect = today.perfectDay
         var list = today.completedHabits
         if let idx = list.firstIndex(of: habit) {
             list.remove(at: idx)
@@ -128,8 +245,319 @@ struct HomeScreen: View {
         today.completedHabits = list
         let allDone = HabitType.allCases.allSatisfy { list.contains($0) }
         today.perfectDay = allDone
-        if allDone { today.xpEarned += 50 }
+        if allDone && wasPerfect == false {
+            today.xpEarned += 50
+        } else if allDone == false && wasPerfect {
+            today.xpEarned -= 50
+        }
+        today.xpEarned = max(0, today.xpEarned)
         try? context.save()
+    }
+}
+
+struct HomeHeader: View {
+    var date: Date
+    var streak: Int
+    var levelTitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Text("Today")
+                        .font(.largeTitle)
+                        .bold()
+                }
+
+                Spacer()
+
+                StreakBadge(count: streak)
+            }
+
+            LevelTag(title: levelTitle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct HomeScoreCard: View {
+    var progress: Double
+    var completedWins: Int
+    var totalWins: Int
+    var xp: Int
+    var quote: String
+
+    var body: some View {
+        HStack(spacing: 18) {
+            ZStack {
+                ProgressRing(progress: progress)
+                    .frame(width: 104, height: 104)
+                VStack(spacing: 2) {
+                    Text("\(completedWins)/\(totalWins)")
+                        .font(.title3)
+                        .bold()
+                    Text("wins")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(Int(progress * 100))% today")
+                    .font(.title2)
+                    .bold()
+                Text("\(xp) XP earned")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text(quote)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct HomeTodayPlanCard: View {
+    var session: TrainingSession?
+    var fuelProfile: FuelProfile
+    var readiness: CoachReadiness
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Today's Plan")
+                    .font(.headline)
+                Spacer()
+                Label(readiness.title, systemImage: readiness.systemImage)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(readiness.tint)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(readiness.tint.opacity(0.14), in: Capsule())
+            }
+
+            HomePlanRow(
+                title: "Workout",
+                value: session?.requiredSummary ?? "No scheduled workout",
+                systemImage: "dumbbell.fill",
+                tint: .green
+            )
+
+            HomePlanRow(
+                title: "Fuel",
+                value: fuelProfile.title,
+                systemImage: fuelProfile.systemImage,
+                tint: fuelProfile.tint
+            )
+
+            HomePlanRow(
+                title: "Coach",
+                value: coachLine,
+                systemImage: "sparkles",
+                tint: readiness.tint
+            )
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var coachLine: String {
+        switch readiness {
+        case .push: return "Add extras only after required work."
+        case .hold: return "Execute the plan and protect recovery."
+        case .recover: return "Scale optional work and prioritize sleep."
+        }
+    }
+}
+
+struct HomePlanRow: View {
+    var title: String
+    var value: String
+    var systemImage: String
+    var tint: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(tint)
+                .frame(width: 26, height: 26)
+                .background(tint.opacity(0.14), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(value)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct DailyWinsCard: View {
+    var today: Day
+    var onToggle: (HabitType) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Daily Wins")
+                    .font(.headline)
+                Spacer()
+                Text("\(today.completedHabits.count)/\(HabitType.allCases.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(HabitType.allCases) { habit in
+                    HomeHabitRow(
+                        habit: habit,
+                        isChecked: today.completedHabits.contains(habit)
+                    ) {
+                        onToggle(habit)
+                    }
+                }
+            }
+        }
+        .padding()
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct HomeHabitRow: View {
+    var habit: HabitType
+    var isChecked: Bool
+    var onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 12) {
+                Image(systemName: isChecked ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isChecked ? .green : .secondary)
+                    .symbolEffect(.bounce, value: isChecked)
+
+                Text(habit.rawValue)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("+\(habit.xpReward)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct HomeNextAction {
+    var title: String
+    var subtitle: String
+    var systemImage: String
+    var tab: AppTab
+    var tint: Color
+}
+
+struct HomeNextActionCard: View {
+    var action: HomeNextAction
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: action.systemImage)
+                    .font(.title3)
+                    .foregroundStyle(action.tint)
+                    .frame(width: 40, height: 40)
+                    .background(action.tint.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Next Action")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(action.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(action.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.secondary)
+            }
+            .padding()
+            .background(action.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct HomeMomentumCard: View {
+    var streak: Int
+    var workoutsCompleted: Int
+    var journalEntries: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Momentum")
+                .font(.headline)
+
+            HStack(spacing: 10) {
+                HomeMetricTile(value: "\(streak)", label: "streak", systemImage: "flame.fill", tint: .orange)
+                HomeMetricTile(value: "\(workoutsCompleted)", label: "workouts", systemImage: "checkmark.seal.fill", tint: .green)
+                HomeMetricTile(value: "\(journalEntries)", label: "journals", systemImage: "book.closed.fill", tint: .purple)
+            }
+        }
+        .padding()
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+struct HomeMetricTile: View {
+    var value: String
+    var label: String
+    var systemImage: String
+    var tint: Color
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.subheadline)
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.headline)
+            Text(label)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
