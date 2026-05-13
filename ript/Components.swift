@@ -1,4 +1,11 @@
 import SwiftUI
+import UIKit
+
+enum Keyboard {
+    static func dismiss() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
 
 struct ProgressRing: View {
     var progress: Double // 0...1
