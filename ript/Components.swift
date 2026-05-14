@@ -147,7 +147,7 @@ struct SegmentKindBadge: View {
         HStack(spacing: 5) {
             Image(systemName: kind.systemImage)
                 .font(.caption)
-            Text(priority?.title ?? kind.title)
+            Text(kind.title)
                 .font(.caption)
                 .fontWeight(.semibold)
         }

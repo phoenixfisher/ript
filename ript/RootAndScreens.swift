@@ -187,15 +187,19 @@ struct HomeScreen: View {
                     HomeHeader(
                         date: Date(),
                         streak: streak,
-                        levelTitle: appVM.level(for: totalXP).title
-                    )
+                        levelTitle: appVM.level(for: totalXP).title,
+                        quote: homeVM.dailyQuote
+                    ) {
+                        withAnimation {
+                            homeVM.resetQuote()
+                        }
+                    }
 
                     HomeScoreCard(
                         progress: progress,
                         completedWins: today.completedHabits.count,
                         totalWins: HabitType.allCases.count,
-                        xp: today.xpEarned,
-                        quote: homeVM.dailyQuote
+                        xp: today.xpEarned
                     )
                     
                     DailyWinsCard(today: today, onToggle: toggle)
@@ -227,7 +231,6 @@ struct HomeScreen: View {
                 .padding()
             }
             .navigationTitle("Ript")
-            .toolbar { Button("Refresh Quote") { withAnimation { homeVM.resetQuote() } } }
         }
     }
 
@@ -259,27 +262,81 @@ struct HomeHeader: View {
     var date: Date
     var streak: Int
     var levelTitle: String
+    var quote: String
+    var onRefreshQuote: () -> Void
+    @State private var refreshSpin = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Today")
-                        .font(.largeTitle)
-                        .bold()
+            HStack(alignment: .center, spacing: 10) {
+                Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .layoutPriority(1)
+
+                Spacer(minLength: 8)
+
+                HStack(spacing: 8) {
+                    LevelTag(title: levelTitle)
+                    HomeStreakCapsule(streak: streak)
                 }
-
-                Spacer()
-
-                StreakBadge(count: streak)
             }
 
-            LevelTag(title: levelTitle)
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "quote.opening")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+                    .padding(.top, 3)
+
+                Text(quote)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.45)) {
+                        refreshSpin += 1
+                    }
+                    onRefreshQuote()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.subheadline.weight(.semibold))
+                        .rotationEffect(.degrees(Double(refreshSpin) * 360))
+                        .frame(width: 30, height: 30)
+                        .background(Color.white.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Refresh quote")
+            }
         }
+        .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+struct HomeStreakCapsule: View {
+    var streak: Int
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "flame.fill")
+                .foregroundStyle(.orange)
+            Text(streakText)
+                .fontWeight(.semibold)
+        }
+        .font(.footnote)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(Color.orange.opacity(0.14), in: Capsule())
+    }
+
+    private var streakText: String {
+        streak == 1 ? "1 day" : "\(streak) days"
     }
 }
 
@@ -288,40 +345,98 @@ struct HomeScoreCard: View {
     var completedWins: Int
     var totalWins: Int
     var xp: Int
-    var quote: String
 
     var body: some View {
-        HStack(spacing: 18) {
-            ZStack {
-                ProgressRing(progress: progress)
-                    .frame(width: 104, height: 104)
-                VStack(spacing: 2) {
-                    Text("\(completedWins)/\(totalWins)")
-                        .font(.title3)
-                        .bold()
-                    Text("wins")
-                        .font(.caption)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Daily Progress")
+                        .font(.headline)
+                    Text(progressLine)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+
+                Spacer(minLength: 8)
+
+                Text("\(Int(clampedProgress * 100))%")
+                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(.green)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(Color.green.opacity(0.14), in: Capsule())
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("\(Int(progress * 100))% today")
-                    .font(.title2)
-                    .bold()
-                Text("\(xp) XP earned")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Text(quote)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            HomeProgressMeter(progress: clampedProgress)
 
-            Spacer(minLength: 0)
+            HStack(spacing: 16) {
+                Label("\(completedWins)/\(totalWins) wins", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Label("\(xp) XP", systemImage: "bolt.fill")
+                    .foregroundStyle(.yellow)
+                Spacer(minLength: 0)
+            }
+            .font(.caption)
+            .fontWeight(.semibold)
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var clampedProgress: Double {
+        min(max(progress, 0), 1)
+    }
+
+    private var progressLine: String {
+        let remainingWins = max(totalWins - completedWins, 0)
+        if totalWins == 0 {
+            return "No wins planned yet"
+        } else if remainingWins == 0 {
+            return "All daily wins complete"
+        } else if remainingWins == 1 {
+            return "1 win left today"
+        } else {
+            return "\(remainingWins) wins left today"
+        }
+    }
+}
+
+struct HomeProgressMeter: View {
+    var progress: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.11))
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [.green, .mint, .blue.opacity(0.9)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth(in: proxy.size.width))
+                    .animation(.spring(response: 0.45, dampingFraction: 0.85), value: progress)
+            }
+        }
+        .frame(height: 12)
+        .accessibilityLabel("Daily progress")
+        .accessibilityValue("\(Int(clampedProgress * 100)) percent")
+    }
+
+    private func fillWidth(in totalWidth: CGFloat) -> CGFloat {
+        guard totalWidth > 0 else { return 0 }
+        guard clampedProgress > 0 else { return 0 }
+        return max(12, totalWidth * clampedProgress)
+    }
+
+    private var clampedProgress: Double {
+        min(max(progress, 0), 1)
     }
 }
 
@@ -900,22 +1015,24 @@ struct TrainingSegmentRow: View {
                     .font(.title3)
                     .foregroundStyle(segment.isCompleted ? .green : .secondary)
                     .padding(.top, 2)
+                    .frame(maxHeight: .infinity, alignment: .center)
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
-                        SegmentKindBadge(kind: segment.kind, priority: nil)
-                        SegmentKindBadge(kind: segment.kind, priority: segment.priority)
+                        
+                        Text(segment.title)
+                            .font(.headline)
+                        
+                        Spacer()
+                        
+                        SegmentKindBadge(kind: segment.kind)
                     }
 
-                    Text(segment.title)
-                        .font(.headline)
                     Text(segment.detail)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
                 }
-
-                Spacer(minLength: 0)
             }
             .padding()
             .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
