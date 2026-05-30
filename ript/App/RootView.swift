@@ -12,13 +12,12 @@ enum AppTab: Hashable {
 struct RootView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
-    @StateObject private var appVM = AppViewModel()
     @StateObject private var homeVM = HomeViewModel()
     @State private var selectedTab: AppTab = .home
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            HomeScreen(appVM: appVM, homeVM: homeVM, selectedTab: $selectedTab)
+            HomeScreen(homeVM: homeVM, selectedTab: $selectedTab)
                 .tabItem { Label("Home", systemImage: "house.fill") }
                 .tag(AppTab.home)
             WorkoutsScreen()

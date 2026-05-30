@@ -13,12 +13,10 @@ struct HomeScreen: View {
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
     @Query(sort: \MealIdea.title) private var meals: [MealIdea]
 
-    var appVM: AppViewModel
     @ObservedObject var homeVM: HomeViewModel
     @Binding var selectedTab: AppTab
 
-    init(appVM: AppViewModel, homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
-        self.appVM = appVM
+    init(homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
         self.homeVM = homeVM
         self._selectedTab = selectedTab
     }
@@ -144,7 +142,6 @@ struct HomeScreen: View {
                     HomeHeader(
                         date: Date(),
                         streak: streak,
-                        levelTitle: appVM.level(for: totalXP).title,
                         quote: homeVM.dailyQuote
                     ) {
                         withAnimation {

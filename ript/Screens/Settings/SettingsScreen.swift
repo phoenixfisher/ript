@@ -62,7 +62,6 @@ struct SettingsScreen: View {
             VStack(alignment: .leading, spacing: 18) {
                 SettingsSectionCard(
                     title: "Profile & Goals",
-                    subtitle: "Keep the app pointed at the way you actually train.",
                     systemImage: "person.crop.circle.fill",
                     tint: .green
                 ) {
@@ -105,7 +104,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "Apple Health",
-                    subtitle: "Read-only import will make Home, Workouts, Meals, and Coach smarter.",
                     systemImage: "heart.fill",
                     tint: .red
                 ) {
@@ -148,7 +146,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "Training Plan",
-                    subtitle: "Manage the base plan and the strength rules layered on top.",
                     systemImage: "calendar.badge.clock",
                     tint: .cyan
                 ) {
@@ -202,7 +199,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "Coach Context",
-                    subtitle: "Choose what the coach is allowed to reference.",
                     systemImage: "slider.horizontal.3",
                     tint: .purple
                 ) {
@@ -214,7 +210,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "Notifications",
-                    subtitle: "Use reminders for the moments you actually want nudges.",
                     systemImage: "bell.badge.fill",
                     tint: .orange
                 ) {
@@ -226,7 +221,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "Data & Privacy",
-                    subtitle: "Keep control of what Ript stores and uses.",
                     systemImage: "lock.shield.fill",
                     tint: .blue
                 ) {
@@ -294,7 +288,6 @@ struct SettingsScreen: View {
 
                 SettingsSectionCard(
                     title: "About",
-                    subtitle: "Ript is fitness and nutrition guidance, not medical advice.",
                     systemImage: "info.circle.fill",
                     tint: .secondary
                 ) {
@@ -522,20 +515,17 @@ struct SettingsSectionTitle: View {
 
 struct SettingsSectionCard<Content: View>: View {
     var title: String
-    var subtitle: String
     var systemImage: String
     var tint: Color
     let content: Content
 
     init(
         title: String,
-        subtitle: String,
         systemImage: String,
         tint: Color,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
-        self.subtitle = subtitle
         self.systemImage = systemImage
         self.tint = tint
         self.content = content()
@@ -547,16 +537,10 @@ struct SettingsSectionCard<Content: View>: View {
                 Image(systemName: systemImage)
                     .font(.headline)
                     .foregroundStyle(tint)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 26)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.headline)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(title)
+                    .font(.headline)
             }
 
             content

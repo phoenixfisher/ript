@@ -3,7 +3,6 @@ import SwiftUI
 struct HomeHeader: View {
     var date: Date
     var streak: Int
-    var levelTitle: String
     var quote: String
     var onRefreshQuote: () -> Void
     @State private var refreshSpin = 0
@@ -20,10 +19,7 @@ struct HomeHeader: View {
 
                 Spacer(minLength: 8)
 
-                HStack(spacing: 8) {
-                    LevelTag(title: levelTitle)
-                    HomeStreakCapsule(streak: streak)
-                }
+                HomeStreakCapsule(streak: streak)
             }
 
             HStack(alignment: .top, spacing: 10) {

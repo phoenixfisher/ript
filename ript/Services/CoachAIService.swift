@@ -110,17 +110,6 @@ enum CoachAIResponseMode: String, CaseIterable, Identifiable {
         }
     }
 
-    var detail: String {
-        switch self {
-        case .fast:
-            return "Quicker replies with lower API use."
-        case .balanced:
-            return "A stronger default for everyday coaching."
-        case .best:
-            return "More capable replies when quality matters most."
-        }
-    }
-
     var model: String {
         switch self {
         case .fast:

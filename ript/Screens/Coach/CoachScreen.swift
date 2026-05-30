@@ -1,8 +1,5 @@
 import SwiftUI
 import SwiftData
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct CoachScreen: View {
     @Environment(\.modelContext) private var context
@@ -14,6 +11,10 @@ struct CoachScreen: View {
     @State private var question: String = ""
     @State private var showCoachMenu: Bool = false
     @State private var isWaitingForAI: Bool = false
+    @AppStorage("coachAIEnabled") private var isAIEnabled: Bool = false
+    @AppStorage("coachAIModel") private var coachAIModel: String = CoachAIResponseMode.balanced.model
+    @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
+    @State private var hasSavedCoachAIKey: Bool = CoachAIKeychain.hasAPIKey
 
     private let suggestedQuestions = [
         "Should I do strength today?",
@@ -56,7 +57,7 @@ struct CoachScreen: View {
                     }
                 }
 
-                CoachComposerBar(question: $question, suggestions: suggestedQuestions) { prompt in
+                CoachComposerBar(question: $question, suggestions: suggestedMessagesEnabled ? suggestedQuestions : []) { prompt in
                     submit(prompt)
                 }
             }
@@ -64,26 +65,25 @@ struct CoachScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 Button {
+                    refreshCoachAIConnectionState()
+                    normalizeCoachAIModel()
                     showCoachMenu = true
                 } label: {
-                    Image(systemName: "line.3.horizontal")
+                    Image(systemName: "gearshape.fill")
                 }
-                .accessibilityLabel("Coach Menu")
+                .accessibilityLabel("AI Coach Settings")
             }
-            .sheet(isPresented: $showCoachMenu) {
+            .sheet(isPresented: $showCoachMenu, onDismiss: refreshCoachAIConnectionState) {
                 NavigationStack {
-                    CoachMenuSheet(context: coachContext, hasMessages: messages.isEmpty == false) {
-                        clearConversation()
-                    }
-                    .navigationTitle("Coach Menu")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        Button("Done") {
-                            showCoachMenu = false
-                        }
-                    }
+                    CoachAIConnectionSheet(
+                        isAIEnabled: $isAIEnabled,
+                        model: $coachAIModel,
+                        hasSavedKey: $hasSavedCoachAIKey,
+                        hasMessages: messages.isEmpty == false,
+                        onClearChat: clearConversation
+                    )
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.medium])
             }
         }
     }
@@ -110,6 +110,24 @@ struct CoachScreen: View {
             fuelProfile: fuelProfile,
             mealPlan: mealPlan
         )
+    }
+
+    private func refreshCoachAIConnectionState() {
+        hasSavedCoachAIKey = CoachAIKeychain.hasAPIKey
+        if hasSavedCoachAIKey == false {
+            isAIEnabled = false
+        }
+    }
+
+    private func normalizeCoachAIModel() {
+        if CoachAIResponseMode.isSupportedModel(coachAIModel) == false {
+            coachAIModel = CoachAIResponseMode.balanced.model
+        }
+    }
+
+    private func clearConversation() {
+        messages.forEach { context.delete($0) }
+        try? context.save()
     }
 
     private func submit(_ prompt: String? = nil) {
@@ -143,11 +161,6 @@ struct CoachScreen: View {
         }
     }
 
-    private func clearConversation() {
-        messages.forEach { context.delete($0) }
-        try? context.save()
-    }
-
     private func scrollToLatest(with proxy: ScrollViewProxy) {
         DispatchQueue.main.async {
             if isWaitingForAI {
@@ -160,45 +173,6 @@ struct CoachScreen: View {
         }
     }
 }
-struct CoachReadCard: View {
-    var context: CoachContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Today's Read")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(context.readiness.title)
-                        .font(.largeTitle)
-                        .bold()
-                    Text(context.primarySummary)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Image(systemName: context.readiness.systemImage)
-                    .font(.title2)
-                    .foregroundStyle(context.readiness.tint)
-                    .frame(width: 38, height: 38)
-                    .background(context.readiness.tint.opacity(0.14), in: Circle())
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(context.topPriorities, id: \.self) { priority in
-                    Label(priority, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                }
-            }
-        }
-        .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
 struct AskCoachCard: View {
     @Binding var question: String
     var suggestions: [String]
@@ -261,24 +235,26 @@ struct CoachComposerBar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(suggestions, id: \.self) { suggestion in
-                        Button {
-                            onSubmit(suggestion)
-                        } label: {
-                            Text(suggestion)
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.primary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.08), in: Capsule())
+            if suggestions.isEmpty == false {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(suggestions, id: \.self) { suggestion in
+                            Button {
+                                onSubmit(suggestion)
+                            } label: {
+                                Text(suggestion)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(.primary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 7)
+                                    .background(Color.white.opacity(0.08), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
             }
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -345,92 +321,25 @@ struct CoachTypingBubble: View {
     }
 }
 
-struct CoachMenuSheet: View {
-    var context: CoachContext
-    var hasMessages: Bool
-    var onClearChat: () -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                CoachReadCard(context: context)
-                
-                CoachMenuBlock(title: "Recovery Guardrails", systemImage: "shield.lefthalf.filled", rows: context.guardrailRows)
-
-                CoachMenuBlock(title: "Coach Brief", systemImage: "sparkles", rows: context.topPriorities)
-
-                CoachMenuBlock(title: "Weekly Snapshot", systemImage: "calendar", rows: context.weekRows)
-
-                CoachContextPanel(context: context)
-                
-                CoachAISettingsCard()
-
-                if hasMessages {
-                    Button(role: .destructive) {
-                        onClearChat()
-                    } label: {
-                        Label("Clear Chat", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .scrollDismissesKeyboard(.interactively)
-    }
-}
-
-struct CoachMenuBlock: View {
-    var title: String
-    var systemImage: String
-    var rows: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(title, systemImage: systemImage)
-                .font(.headline)
-
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(rows, id: \.self) { row in
-                    Label(row, systemImage: "checkmark.circle.fill")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-    }
-}
-
 struct CoachAISettingsCard: View {
     @AppStorage("coachAIEnabled") private var isAIEnabled: Bool = false
     @AppStorage("coachAIModel") private var model: String = CoachAIResponseMode.balanced.model
     @State private var hasSavedKey: Bool = CoachAIKeychain.hasAPIKey
     @State private var showConnectionSheet: Bool = false
 
-    private var statusTitle: String {
-        guard hasSavedKey else { return "Setup" }
-        return isAIEnabled ? "On" : "Off"
-    }
-
     var body: some View {
         Button {
             showConnectionSheet = true
         } label: {
             HStack(spacing: 6) {
-                Text("AI Coach")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                
                 Image(systemName: "sparkles")
                     .font(.headline)
                     .foregroundStyle(.green)
                     .frame(width: 30, height: 30)
+                
+                Text("AI Coach")
+                    .font(.headline)
+                    .foregroundStyle(.primary)
 
                 Spacer()
 
@@ -450,7 +359,7 @@ struct CoachAISettingsCard: View {
                     hasSavedKey: $hasSavedKey
                 )
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.medium])
         }
         .onAppear {
             refreshConnectionState()
@@ -477,8 +386,15 @@ struct CoachAIConnectionSheet: View {
     @Binding var isAIEnabled: Bool
     @Binding var model: String
     @Binding var hasSavedKey: Bool
+    var hasMessages: Bool = false
+    var onClearChat: (() -> Void)?
+    @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
     @State private var apiKey: String = ""
-    @State private var statusMessage: String?
+    @State private var isConnectionExpanded: Bool = false
+    @State private var showConnectionAlert: Bool = false
+    @State private var connectionAlertTitle: String = ""
+    @State private var connectionAlertMessage: String = ""
+    private let savedKeyPlaceholder = "saved-openai-key"
 
     private var trimmedAPIKey: String {
         apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -488,114 +404,158 @@ struct CoachAIConnectionSheet: View {
         CoachAIResponseMode.mode(for: model)
     }
 
+    private var connectionStatus: String {
+        hasSavedKey ? "Saved" : "Missing"
+    }
+
+    private var shouldClearConnection: Bool {
+        hasSavedKey && (trimmedAPIKey.isEmpty || trimmedAPIKey == savedKeyPlaceholder)
+    }
+
+    private var connectionActionTitle: String {
+        shouldClearConnection ? "Clear" : "Save"
+    }
+
+    private var isConnectionActionDisabled: Bool {
+        shouldClearConnection == false && (trimmedAPIKey.isEmpty || trimmedAPIKey == savedKeyPlaceholder)
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 10) {
+                Button {
+                    toggleAICoach()
+                } label: {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("AI Coach", systemImage: "sparkles")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+
+                            Spacer()
+
+                            Toggle("", isOn: $isAIEnabled)
+                                .labelsHidden()
+                                .disabled(hasSavedKey == false)
+                                .allowsHitTesting(false)
+                        }
+
+                        if hasSavedKey == false {
+                            Text("Add a key to turn AI Coach on.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    suggestedMessagesEnabled.toggle()
+                    Haptics.light()
+                } label: {
                     HStack {
-                        Label("AI Coach", systemImage: "sparkles")
+                        Label("Suggested Messages", systemImage: "text.bubble.fill")
                             .font(.headline)
+                            .foregroundStyle(.primary)
 
                         Spacer()
 
-                        Toggle("", isOn: $isAIEnabled)
+                        Toggle("", isOn: $suggestedMessagesEnabled)
                             .labelsHidden()
-                            .disabled(hasSavedKey == false)
+                            .allowsHitTesting(false)
                     }
-
-                    if hasSavedKey == false {
-                        Text("Add a key to turn AI Coach on.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .padding()
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 }
-                .padding()
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                .buttonStyle(.plain)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("OpenAI Connection", systemImage: "lock.shield.fill")
-                        .font(.headline)
-                    Text("Your key stays in Keychain on this device and is only used for Coach responses.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                    DisclosureGroup(isExpanded: $isConnectionExpanded) {
+                        HStack(spacing: 8) {
+                            SecureField("OpenAI API key", text: $apiKey)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .submitLabel(.done)
+                                .onSubmit { Keyboard.dismiss() }
+                                .textFieldStyle(.roundedBorder)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(hasSavedKey ? "Connection saved" : "Add your API key")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-
-                    HStack(spacing: 8) {
-                        SecureField(hasSavedKey ? "Replace API key" : "OpenAI API key", text: $apiKey)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .submitLabel(.done)
-                            .onSubmit { Keyboard.dismiss() }
-                            .textFieldStyle(.roundedBorder)
-
-                        #if canImport(UIKit)
-                        Button {
-                            pasteAPIKey()
-                        } label: {
-                            Image(systemName: "doc.on.clipboard")
-                                .frame(width: 20, height: 20)
+                            Button {
+                                performConnectionAction()
+                            } label: {
+                                Text(connectionActionTitle)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .frame(width: 48)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.regular)
+                            .tint(shouldClearConnection ? .red : .green)
+                            .disabled(isConnectionActionDisabled)
                         }
-                        .buttonStyle(.bordered)
-                        .accessibilityLabel("Paste API Key")
-                        #endif
-                    }
-
-                    Text(hasSavedKey ? "Paste a new key only when you want to replace the saved one." : "Create a key from your OpenAI dashboard, then paste it here.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding()
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Response Mode")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-
-                    Picker("Response Mode", selection: $model) {
-                        ForEach(CoachAIResponseMode.allCases) { mode in
-                            Text(mode.title).tag(mode.model)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    Text(selectedMode.detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding()
-                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-                if let statusMessage {
-                    Label(statusMessage, systemImage: "checkmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.green)
-                }
-
-                Button {
-                    saveConnection()
-                } label: {
-                    Label(hasSavedKey ? "Update Connection" : "Save Connection", systemImage: "checkmark.shield.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(trimmedAPIKey.isEmpty)
-
-                if hasSavedKey {
-                    Button(role: .destructive) {
-                        removeConnection()
+                        .padding(.top, 8)
                     } label: {
-                        Label("Remove Key", systemImage: "trash")
-                            .frame(maxWidth: .infinity)
+                        HStack {
+                            Label("OpenAI Connection", systemImage: "lock.shield.fill")
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+
+                            Spacer()
+
+                            Text(connectionStatus)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(hasSavedKey ? .green : .secondary)
+                        }
                     }
-                    .buttonStyle(.bordered)
+                    .tint(.primary)
+                }
+                .padding()
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+
+                HStack {
+                    Label("Response Mode", systemImage: "slider.horizontal.3")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Spacer()
+
+                    Menu {
+                        ForEach(CoachAIResponseMode.allCases) { mode in
+                            Button {
+                                model = mode.model
+                            } label: {
+                                if mode.model == model {
+                                    Label(mode.title, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(selectedMode.title)
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                    }
+                }
+                .padding()
+                .frame(minHeight: 58)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+
+                if let onClearChat {
+                    Button(role: .destructive) {
+                        onClearChat()
+                        Haptics.success()
+                    } label: {
+                        Label("Clear Chat", systemImage: "trash")
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .disabled(!hasMessages)
                 }
             }
             .padding()
@@ -608,30 +568,63 @@ struct CoachAIConnectionSheet: View {
                 dismiss()
             }
         }
+        .alert(connectionAlertTitle, isPresented: $showConnectionAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(connectionAlertMessage)
+        }
         .onAppear {
             normalizeModel()
+            prepareAPIKeyField()
+            isConnectionExpanded = hasSavedKey == false
         }
     }
 
+    private func toggleAICoach() {
+        guard hasSavedKey else {
+            isConnectionExpanded = true
+            return
+        }
+
+        isAIEnabled.toggle()
+        Haptics.light()
+    }
+
     private func saveConnection() {
+        guard isConnectionActionDisabled == false else { return }
+
         CoachAIKeychain.saveAPIKey(trimmedAPIKey)
-        apiKey = ""
         hasSavedKey = CoachAIKeychain.hasAPIKey
 
         if hasSavedKey {
             isAIEnabled = true
-            statusMessage = "Connection saved."
+            apiKey = savedKeyPlaceholder
             Haptics.success()
+            showConnectionConfirmation(
+                title: "OpenAI Key Saved",
+                message: "AI Coach can use OpenAI when the switch is on."
+            )
         }
     }
 
-    private func removeConnection() {
+    private func clearConnection() {
         CoachAIKeychain.deleteAPIKey()
         hasSavedKey = false
         isAIEnabled = false
         apiKey = ""
-        statusMessage = "Connection removed."
         Haptics.success()
+        showConnectionConfirmation(
+            title: "OpenAI Key Cleared",
+            message: "AI Coach will use local responses until a new key is saved."
+        )
+    }
+
+    private func performConnectionAction() {
+        if shouldClearConnection {
+            clearConnection()
+        } else {
+            saveConnection()
+        }
     }
 
     private func normalizeModel() {
@@ -640,69 +633,16 @@ struct CoachAIConnectionSheet: View {
         }
     }
 
-    #if canImport(UIKit)
-    private func pasteAPIKey() {
-        guard let pastedKey = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
-              pastedKey.isEmpty == false else { return }
-
-        apiKey = pastedKey
-    }
-    #endif
-}
-
-struct CoachContextPanel: View {
-    var context: CoachContext
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Context")
-                .font(.headline)
-
-            DisclosureGroup("Workout") {
-                CoachContextRows(rows: context.workoutRows)
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-            DisclosureGroup("Meals & Fuel") {
-                CoachContextRows(rows: context.mealRows)
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-            DisclosureGroup("Reflect") {
-                CoachContextRows(rows: context.reflectionRows)
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-
-            DisclosureGroup("Week Snapshot") {
-                CoachContextRows(rows: context.weekRows)
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    private func prepareAPIKeyField() {
+        if hasSavedKey && apiKey.isEmpty {
+            apiKey = savedKeyPlaceholder
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
-}
 
-struct CoachContextRows: View {
-    var rows: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(rows, id: \.self) { row in
-                Text(row)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(.top, 8)
+    private func showConnectionConfirmation(title: String, message: String) {
+        connectionAlertTitle = title
+        connectionAlertMessage = message
+        showConnectionAlert = true
     }
 }
 
