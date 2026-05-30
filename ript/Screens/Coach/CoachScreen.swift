@@ -1,5 +1,8 @@
 import SwiftUI
 import SwiftData
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct CoachScreen: View {
     @Environment(\.modelContext) private var context
@@ -406,67 +409,245 @@ struct CoachMenuBlock: View {
 
 struct CoachAISettingsCard: View {
     @AppStorage("coachAIEnabled") private var isAIEnabled: Bool = false
-    @AppStorage("coachAIModel") private var model: String = "gpt-5.4-mini"
-    @State private var apiKey: String = ""
+    @AppStorage("coachAIModel") private var model: String = CoachAIResponseMode.balanced.model
     @State private var hasSavedKey: Bool = CoachAIKeychain.hasAPIKey
+    @State private var showConnectionSheet: Bool = false
+
+    private var statusTitle: String {
+        guard hasSavedKey else { return "Setup" }
+        return isAIEnabled ? "On" : "Off"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("AI", systemImage: "sparkles")
+        Button {
+            showConnectionSheet = true
+        } label: {
+            HStack(spacing: 6) {
+                Text("AI Coach")
                     .font(.headline)
+                    .foregroundStyle(.primary)
+                
+                Image(systemName: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(.green)
+                    .frame(width: 30, height: 30)
+
                 Spacer()
-                Toggle("", isOn: $isAIEnabled)
-                    .labelsHidden()
+
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.primary)
             }
+            .padding()
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("AI Coach Settings")
+        .sheet(isPresented: $showConnectionSheet, onDismiss: refreshConnectionState) {
+            NavigationStack {
+                CoachAIConnectionSheet(
+                    isAIEnabled: $isAIEnabled,
+                    model: $model,
+                    hasSavedKey: $hasSavedKey
+                )
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .onAppear {
+            refreshConnectionState()
+            normalizeModel()
+        }
+    }
 
-            Text(hasSavedKey ? "OpenAI key saved. Coach will use AI when enabled." : "Add an OpenAI API key to use real AI responses.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private func refreshConnectionState() {
+        hasSavedKey = CoachAIKeychain.hasAPIKey
+        if hasSavedKey == false {
+            isAIEnabled = false
+        }
+    }
 
-            TextField("Model", text: $model)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .onSubmit { Keyboard.dismiss() }
-                .textFieldStyle(.roundedBorder)
+    private func normalizeModel() {
+        if CoachAIResponseMode.isSupportedModel(model) == false {
+            model = CoachAIResponseMode.balanced.model
+        }
+    }
+}
 
-            SecureField(hasSavedKey ? "Replace API key" : "OpenAI API key", text: $apiKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .onSubmit { Keyboard.dismiss() }
-                .textFieldStyle(.roundedBorder)
+struct CoachAIConnectionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var isAIEnabled: Bool
+    @Binding var model: String
+    @Binding var hasSavedKey: Bool
+    @State private var apiKey: String = ""
+    @State private var statusMessage: String?
 
-            HStack {
-                Button {
-                    CoachAIKeychain.saveAPIKey(apiKey)
-                    apiKey = ""
-                    hasSavedKey = CoachAIKeychain.hasAPIKey
-                    Haptics.success()
-                } label: {
-                    Label("Save Key", systemImage: "key.fill")
+    private var trimmedAPIKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var selectedMode: CoachAIResponseMode {
+        CoachAIResponseMode.mode(for: model)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("AI Coach", systemImage: "sparkles")
+                            .font(.headline)
+
+                        Spacer()
+
+                        Toggle("", isOn: $isAIEnabled)
+                            .labelsHidden()
+                            .disabled(hasSavedKey == false)
+                    }
+
+                    if hasSavedKey == false {
+                        Text("Add a key to turn AI Coach on.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .padding()
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
 
-                Spacer()
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("OpenAI Connection", systemImage: "lock.shield.fill")
+                        .font(.headline)
+                    Text("Your key stays in Keychain on this device and is only used for Coach responses.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(hasSavedKey ? "Connection saved" : "Add your API key")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    HStack(spacing: 8) {
+                        SecureField(hasSavedKey ? "Replace API key" : "OpenAI API key", text: $apiKey)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            .onSubmit { Keyboard.dismiss() }
+                            .textFieldStyle(.roundedBorder)
+
+                        #if canImport(UIKit)
+                        Button {
+                            pasteAPIKey()
+                        } label: {
+                            Image(systemName: "doc.on.clipboard")
+                                .frame(width: 20, height: 20)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Paste API Key")
+                        #endif
+                    }
+
+                    Text(hasSavedKey ? "Paste a new key only when you want to replace the saved one." : "Create a key from your OpenAI dashboard, then paste it here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding()
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Response Mode")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+
+                    Picker("Response Mode", selection: $model) {
+                        ForEach(CoachAIResponseMode.allCases) { mode in
+                            Text(mode.title).tag(mode.model)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text(selectedMode.detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+
+                if let statusMessage {
+                    Label(statusMessage, systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                }
+
+                Button {
+                    saveConnection()
+                } label: {
+                    Label(hasSavedKey ? "Update Connection" : "Save Connection", systemImage: "checkmark.shield.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(trimmedAPIKey.isEmpty)
 
                 if hasSavedKey {
                     Button(role: .destructive) {
-                        CoachAIKeychain.deleteAPIKey()
-                        hasSavedKey = false
-                        isAIEnabled = false
-                        apiKey = ""
+                        removeConnection()
                     } label: {
-                        Label("Remove", systemImage: "trash")
+                        Label("Remove Key", systemImage: "trash")
+                            .frame(maxWidth: .infinity)
                     }
+                    .buttonStyle(.bordered)
                 }
             }
-            .font(.caption)
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .navigationTitle("AI Coach")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            Button("Done") {
+                dismiss()
+            }
+        }
+        .onAppear {
+            normalizeModel()
+        }
     }
+
+    private func saveConnection() {
+        CoachAIKeychain.saveAPIKey(trimmedAPIKey)
+        apiKey = ""
+        hasSavedKey = CoachAIKeychain.hasAPIKey
+
+        if hasSavedKey {
+            isAIEnabled = true
+            statusMessage = "Connection saved."
+            Haptics.success()
+        }
+    }
+
+    private func removeConnection() {
+        CoachAIKeychain.deleteAPIKey()
+        hasSavedKey = false
+        isAIEnabled = false
+        apiKey = ""
+        statusMessage = "Connection removed."
+        Haptics.success()
+    }
+
+    private func normalizeModel() {
+        if CoachAIResponseMode.isSupportedModel(model) == false {
+            model = CoachAIResponseMode.balanced.model
+        }
+    }
+
+    #if canImport(UIKit)
+    private func pasteAPIKey() {
+        guard let pastedKey = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+              pastedKey.isEmpty == false else { return }
+
+        apiKey = pastedKey
+    }
+    #endif
 }
 
 struct CoachContextPanel: View {

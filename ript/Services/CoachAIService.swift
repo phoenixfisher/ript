@@ -92,6 +92,55 @@ struct CoachPromptSnapshot {
     }
 }
 
+enum CoachAIResponseMode: String, CaseIterable, Identifiable {
+    case fast
+    case balanced
+    case best
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .fast:
+            return "Fast"
+        case .balanced:
+            return "Balanced"
+        case .best:
+            return "Best"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .fast:
+            return "Quicker replies with lower API use."
+        case .balanced:
+            return "A stronger default for everyday coaching."
+        case .best:
+            return "More capable replies when quality matters most."
+        }
+    }
+
+    var model: String {
+        switch self {
+        case .fast:
+            return "gpt-5.4-mini"
+        case .balanced:
+            return "gpt-5.4"
+        case .best:
+            return "gpt-5.5"
+        }
+    }
+
+    static func mode(for model: String) -> CoachAIResponseMode {
+        allCases.first { $0.model == model } ?? .balanced
+    }
+
+    static func isSupportedModel(_ model: String) -> Bool {
+        allCases.contains { $0.model == model }
+    }
+}
+
 enum CoachAIService {
     private static let endpoint = URL(string: "https://api.openai.com/v1/responses")!
 
@@ -104,7 +153,7 @@ enum CoachAIService {
         let defaults = UserDefaults.standard
         let isEnabled = defaults.bool(forKey: "coachAIEnabled")
         let model = defaults.string(forKey: "coachAIModel")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let selectedModel = model?.isEmpty == false ? model! : "gpt-5.4-mini"
+        let selectedModel = model?.isEmpty == false ? model! : CoachAIResponseMode.balanced.model
 
         guard isEnabled, let apiKey = CoachAIKeychain.readAPIKey(), apiKey.isEmpty == false else {
             return fallback
@@ -155,7 +204,7 @@ enum CoachAIService {
             Prefer specific next actions over generic motivation.
             Do not invent completed workouts, meals, body metrics, or journal details.
             If injury, illness, chest pain, dizziness, or medical risk appears, advise the user to stop and seek qualified medical help.
-            Keep answers to 2-5 short paragraphs or a compact bullet list.
+            Keep answers very brief.
             """,
             input: input
         )
