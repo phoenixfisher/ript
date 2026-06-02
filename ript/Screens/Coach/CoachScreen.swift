@@ -45,6 +45,8 @@ struct CoachScreen: View {
                             }
                         }
                         .padding()
+                        .animation(.spring(response: 0.34, dampingFraction: 0.84), value: messages.count)
+                        .animation(.easeInOut(duration: 0.2), value: isWaitingForAI)
                     }
                     .onChange(of: messages.count) {
                         scrollToLatest(with: proxy)
@@ -289,36 +291,98 @@ struct CoachBubble: View {
     var role: String
     var content: String
 
+    private var isUser: Bool {
+        role == "user"
+    }
+
+    private var bubbleColor: Color {
+        isUser ? .green : Color.white.opacity(0.08)
+    }
+
+    private var textColor: Color {
+        isUser ? .black : .primary
+    }
+
+    private var bubbleShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            cornerRadii: .init(
+                topLeading: 20,
+                bottomLeading: isUser ? 20 : 6,
+                bottomTrailing: isUser ? 6 : 20,
+                topTrailing: 20
+            ),
+            style: .continuous
+        )
+    }
+
     var body: some View {
-        HStack {
-            if role == "user" { Spacer(minLength: 36) }
+        HStack(alignment: .bottom) {
+            if isUser { Spacer(minLength: 42) }
 
             Text(content)
                 .font(.subheadline)
-                .foregroundStyle(role == "user" ? .black : .primary)
-                .padding()
-                .background(role == "user" ? Color.green : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+                .lineSpacing(2)
+                .foregroundStyle(textColor)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(bubbleColor, in: bubbleShape)
+                .overlay {
+                    if isUser == false {
+                        bubbleShape
+                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
 
-            if role != "user" { Spacer(minLength: 36) }
+            if isUser == false { Spacer(minLength: 42) }
         }
+        .transition(
+            .asymmetric(
+                insertion: .move(edge: .bottom)
+                    .combined(with: .opacity)
+                    .combined(with: .scale(scale: 0.96, anchor: isUser ? .trailing : .leading)),
+                removal: .opacity
+            )
+        )
     }
 }
 
 struct CoachTypingBubble: View {
+    @State private var animateDots = false
+
     var body: some View {
         HStack {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Coach is thinking")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+            HStack(spacing: 5) {
+                ForEach(0..<3) { index in
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: 6, height: 6)
+                        .scaleEffect(animateDots ? 1 : 0.62)
+                        .opacity(animateDots ? 1 : 0.35)
+                        .animation(
+                            .easeInOut(duration: 0.58)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(index) * 0.15),
+                            value: animateDots
+                        )
+                }
             }
-            .padding()
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 14))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 18)
+            .background(
+                Color.white.opacity(0.08),
+                in: UnevenRoundedRectangle(
+                    cornerRadii: .init(topLeading: 20, bottomLeading: 6, bottomTrailing: 20, topTrailing: 20),
+                    style: .continuous
+                )
+            )
+            .onAppear {
+                animateDots = true
+            }
 
-            Spacer(minLength: 36)
+            Spacer(minLength: 42)
         }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 }
 
