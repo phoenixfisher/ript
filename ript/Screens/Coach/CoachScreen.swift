@@ -15,6 +15,9 @@ struct CoachScreen: View {
     @AppStorage("coachAIModel") private var coachAIModel: String = CoachAIResponseMode.balanced.model
     @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
     @State private var hasSavedCoachAIKey: Bool = CoachAIKeychain.hasAPIKey
+    @State private var optimisticUserMessage: CoachDisplayMessage?
+    @State private var optimisticCoachMessage: CoachDisplayMessage?
+    @State private var composerFocusScrollRequest: Int = 0
 
     private let suggestedQuestions = [
         "Should I do strength today?",
@@ -23,17 +26,35 @@ struct CoachScreen: View {
         "What is my focus tomorrow?"
     ]
 
+    private var displayedMessages: [CoachDisplayMessage] {
+        var displayMessages = messages.map { message in
+            CoachDisplayMessage(id: message.id, role: message.role, content: message.content)
+        }
+
+        if let optimisticUserMessage,
+           displayMessages.contains(where: { $0.id == optimisticUserMessage.id }) == false {
+            displayMessages.append(optimisticUserMessage)
+        }
+
+        if let optimisticCoachMessage,
+           displayMessages.contains(where: { $0.id == optimisticCoachMessage.id }) == false {
+            displayMessages.append(optimisticCoachMessage)
+        }
+
+        return displayMessages
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            if messages.isEmpty {
+                            if displayedMessages.isEmpty {
                                 CoachBubble(role: "coach", content: CoachBrain.openingBrief(for: coachContext))
                                     .id("opening")
                             } else {
-                                ForEach(messages) { message in
+                                ForEach(displayedMessages) { message in
                                     CoachBubble(role: message.role, content: message.content)
                                         .id(message.id)
                                 }
@@ -45,13 +66,16 @@ struct CoachScreen: View {
                             }
                         }
                         .padding()
-                        .animation(.spring(response: 0.34, dampingFraction: 0.84), value: messages.count)
+                        .animation(.spring(response: 0.34, dampingFraction: 0.84), value: displayedMessages.count)
                         .animation(.easeInOut(duration: 0.2), value: isWaitingForAI)
                     }
-                    .onChange(of: messages.count) {
+                    .onChange(of: displayedMessages.last?.id) {
                         scrollToLatest(with: proxy)
                     }
                     .onChange(of: isWaitingForAI) {
+                        scrollToLatest(with: proxy)
+                    }
+                    .onChange(of: composerFocusScrollRequest) {
                         scrollToLatest(with: proxy)
                     }
                     .task {
@@ -59,9 +83,14 @@ struct CoachScreen: View {
                     }
                 }
 
-                CoachComposerBar(question: $question, suggestions: suggestedMessagesEnabled ? suggestedQuestions : []) { prompt in
-                    submit(prompt)
-                }
+                CoachComposerBar(
+                    question: $question,
+                    suggestions: suggestedMessagesEnabled ? suggestedQuestions : [],
+                    onSubmit: { prompt in
+                        submit(prompt)
+                    },
+                    onFocusChange: handleComposerFocusChange
+                )
             }
             .navigationTitle("Coach")
             .navigationBarTitleDisplayMode(.inline)
@@ -129,6 +158,8 @@ struct CoachScreen: View {
 
     private func clearConversation() {
         messages.forEach { context.delete($0) }
+        optimisticUserMessage = nil
+        optimisticCoachMessage = nil
         try? context.save()
     }
 
@@ -136,18 +167,25 @@ struct CoachScreen: View {
         let rawQuestion = (prompt ?? question).trimmingCharacters(in: .whitespacesAndNewlines)
         guard rawQuestion.isEmpty == false, isWaitingForAI == false else { return }
 
-        question = ""
-        context.insert(CoachMessage(role: "user", content: rawQuestion))
+        let userMessageID = UUID()
+        let optimisticMessage = CoachDisplayMessage(id: userMessageID, role: "user", content: rawQuestion)
+        let history = messages.suffix(10).map { message in
+            CoachTranscriptMessage(role: message.role, content: message.content)
+        }
+
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+            question = ""
+            optimisticUserMessage = optimisticMessage
+            isWaitingForAI = true
+        }
+
+        context.insert(CoachMessage(id: userMessageID, role: "user", content: rawQuestion))
         try? context.save()
         Haptics.light()
 
         let contextSnapshot = coachContext.promptSnapshot
         let fallback = CoachBrain.answer(rawQuestion, context: coachContext)
-        let history = messages.suffix(10).map { message in
-            CoachTranscriptMessage(role: message.role, content: message.content)
-        }
 
-        isWaitingForAI = true
         Task {
             let answer = await CoachAIService.answer(
                 question: rawQuestion,
@@ -155,25 +193,51 @@ struct CoachScreen: View {
                 history: history,
                 fallback: fallback
             )
+            let coachMessageID = UUID()
+            let optimisticCoachResponse = CoachDisplayMessage(id: coachMessageID, role: "coach", content: answer)
 
-            context.insert(CoachMessage(role: "coach", content: answer))
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) {
+                optimisticCoachMessage = optimisticCoachResponse
+                isWaitingForAI = false
+            }
+
+            context.insert(CoachMessage(id: coachMessageID, role: "coach", content: answer))
             try? context.save()
-            isWaitingForAI = false
             Haptics.light()
         }
     }
 
     private func scrollToLatest(with proxy: ScrollViewProxy) {
         DispatchQueue.main.async {
-            if isWaitingForAI {
-                proxy.scrollTo("typing", anchor: .bottom)
-            } else if let last = messages.last {
-                proxy.scrollTo(last.id, anchor: .bottom)
-            } else {
-                proxy.scrollTo("opening", anchor: .bottom)
+            withAnimation(.easeOut(duration: 0.24)) {
+                if isWaitingForAI {
+                    proxy.scrollTo("typing", anchor: .bottom)
+                } else if let last = displayedMessages.last {
+                    proxy.scrollTo(last.id, anchor: .bottom)
+                } else {
+                    proxy.scrollTo("opening", anchor: .bottom)
+                }
             }
         }
     }
+
+    private func handleComposerFocusChange(_ isFocused: Bool) {
+        guard isFocused else { return }
+
+        DispatchQueue.main.async {
+            composerFocusScrollRequest += 1
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+            composerFocusScrollRequest += 1
+        }
+    }
+}
+
+private struct CoachDisplayMessage: Identifiable {
+    let id: UUID
+    let role: String
+    let content: String
 }
 struct AskCoachCard: View {
     @Binding var question: String
@@ -229,8 +293,10 @@ struct AskCoachCard: View {
 
 struct CoachComposerBar: View {
     @Binding var question: String
+    @FocusState private var isFocused: Bool
     var suggestions: [String]
     var onSubmit: (String?) -> Void
+    var onFocusChange: (Bool) -> Void = { _ in }
     var sendInvalid: Bool {
         question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -261,8 +327,12 @@ struct CoachComposerBar: View {
 
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("Message Coach", text: $question, axis: .vertical)
+                    .focused($isFocused)
                     .submitLabel(.done)
                     .onSubmit { Keyboard.dismiss() }
+                    .onChange(of: isFocused) {
+                        onFocusChange(isFocused)
+                    }
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .padding(.horizontal, 12)
