@@ -258,10 +258,11 @@ struct CoachComposerBar: View {
             }
 
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Message Coach", text: $question)
+                TextField("Message Coach", text: $question, axis: .vertical)
                     .submitLabel(.done)
                     .onSubmit { Keyboard.dismiss() }
                     .textFieldStyle(.plain)
+                    .lineLimit(1...8)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
