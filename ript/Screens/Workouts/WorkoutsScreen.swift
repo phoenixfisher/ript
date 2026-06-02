@@ -4,6 +4,9 @@ import SwiftData
 struct WorkoutsScreen: View {
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Workout.name) private var workouts: [Workout]
+    @State private var selectedWeekLabel: String?
+    @State private var selectedMonthStart: Date?
+    @State private var scheduleViewMode: TrainingScheduleViewMode = .week
 
     var body: some View {
         NavigationStack {
@@ -37,13 +40,88 @@ struct WorkoutsScreen: View {
                         }
                     }
 
-                    if weekSessions.isEmpty == false {
+                    if visibleSessions.isEmpty == false {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("This Week")
-                                .font(.headline)
+                            HStack(spacing: 10) {
+                                Menu {
+                                    ForEach(TrainingScheduleViewMode.allCases) { mode in
+                                        Button {
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+                                                scheduleViewMode = mode
+
+                                                if mode == .month,
+                                                   let date = weekSessions.first?.date {
+                                                    selectedMonthStart = monthStart(for: date)
+                                                }
+                                            }
+                                        } label: {
+                                            Label(mode.title, systemImage: scheduleViewMode == mode ? "checkmark" : mode.systemImage)
+                                        }
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Text(scheduleSectionTitle)
+                                            .font(.headline)
+
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+                                .frame(width: 96, alignment: .leading)
+
+                                HStack(spacing: 6) {
+                                    Button {
+                                        moveSchedule(by: -1)
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(canMoveSchedule(by: -1) ? Color.primary : Color.secondary.opacity(0.35))
+                                            .frame(width: 28, height: 28)
+                                            .background(Color.white.opacity(0.06), in: Circle())
+                                    }
+                                    .disabled(canMoveSchedule(by: -1) == false)
+                                    .accessibilityLabel(scheduleViewMode.previousAccessibilityLabel)
+
+                                    Text(scheduleDateRangeText)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .monospacedDigit()
+                                        .lineLimit(1)
+
+                                    Button {
+                                        moveSchedule(by: 1)
+                                    } label: {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(canMoveSchedule(by: 1) ? Color.primary : Color.secondary.opacity(0.35))
+                                            .frame(width: 28, height: 28)
+                                            .background(Color.white.opacity(0.06), in: Circle())
+                                    }
+                                    .disabled(canMoveSchedule(by: 1) == false)
+                                    .accessibilityLabel(scheduleViewMode.nextAccessibilityLabel)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .center)
+
+                                Button {
+                                    jumpToTodaySchedule()
+                                } label: {
+                                    Text("Today")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(canJumpToTodaySchedule ? Color.primary : Color.secondary.opacity(0.35))
+                                        .padding(.horizontal, 9)
+                                        .frame(height: 28)
+                                        .background(Color.white.opacity(0.06), in: Capsule())
+                                }
+                                .disabled(canJumpToTodaySchedule == false)
+                                .buttonStyle(.plain)
+                                .frame(width: 64, alignment: .trailing)
+                            }
 
                             VStack(spacing: 10) {
-                                ForEach(weekSessions) { session in
+                                ForEach(visibleSessions) { session in
                                     NavigationLink {
                                         TrainingSessionDetail(session: session)
                                     } label: {
@@ -52,6 +130,8 @@ struct WorkoutsScreen: View {
                                     .buttonStyle(.plain)
                                 }
                             }
+                            .animation(.spring(response: 0.3, dampingFraction: 0.86), value: activeWeekLabel)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.86), value: scheduleViewMode)
                         }
                     }
 
@@ -95,8 +175,267 @@ struct WorkoutsScreen: View {
     }
 
     private var weekSessions: [TrainingSession] {
-        guard let anchor = todaysSession ?? nextSession else { return [] }
-        return trainingSessions.filter { $0.weekLabel == anchor.weekLabel }
+        guard let label = activeWeekLabel else { return [] }
+        return trainingSessions
+            .filter { $0.weekLabel == label }
+            .sorted { $0.date < $1.date }
+    }
+
+    private var monthSessions: [TrainingSession] {
+        guard let activeMonthStart else { return [] }
+        return trainingSessions
+            .filter { monthStart(for: $0.date) == activeMonthStart }
+            .sorted { $0.date < $1.date }
+    }
+
+    private var visibleSessions: [TrainingSession] {
+        switch scheduleViewMode {
+        case .week:
+            weekSessions
+        case .month:
+            monthSessions
+        }
+    }
+
+    private var activeWeekLabel: String? {
+        if let selectedWeekLabel,
+           weekLabels.contains(selectedWeekLabel) {
+            return selectedWeekLabel
+        }
+
+        return currentWeekLabel ?? weekLabels.first
+    }
+
+    private var currentWeekLabel: String? {
+        todayWeekTargetLabel ?? (todaysSession ?? nextSession)?.weekLabel
+    }
+
+    private var scheduleSectionTitle: String {
+        switch scheduleViewMode {
+        case .week:
+            guard let activeWeekLabel else { return "This Week" }
+            return activeWeekLabel == currentWeekLabel ? "This Week" : "Week"
+        case .month:
+            guard let activeMonthStart,
+                  let currentMonthStart else { return "Month" }
+            return activeMonthStart == currentMonthStart ? "This Month" : "Month"
+        }
+    }
+
+    private var weekLabels: [String] {
+        Dictionary(grouping: trainingSessions, by: \.weekLabel)
+            .sorted { lhs, rhs in
+                let lhsDate = lhs.value.map(\.date).min() ?? .distantFuture
+                let rhsDate = rhs.value.map(\.date).min() ?? .distantFuture
+                return lhsDate < rhsDate
+            }
+            .map(\.key)
+    }
+
+    private var monthStarts: [Date] {
+        Array(Set(trainingSessions.map { monthStart(for: $0.date) }))
+            .sorted()
+    }
+
+    private var activeMonthStart: Date? {
+        if let selectedMonthStart,
+           monthStarts.contains(selectedMonthStart) {
+            return selectedMonthStart
+        }
+
+        return currentMonthStart ?? monthStarts.first
+    }
+
+    private var currentMonthStart: Date? {
+        if monthStarts.contains(todayMonthStart) {
+            return todayMonthStart
+        }
+
+        return (todaysSession ?? nextSession).map { monthStart(for: $0.date) }
+    }
+
+    private var todayMonthStart: Date {
+        monthStart(for: Date())
+    }
+
+    private var todayWeekTargetLabel: String? {
+        if let todaysSession {
+            return todaysSession.weekLabel
+        }
+
+        guard let todayWeek = Calendar.current.dateInterval(of: .weekOfYear, for: Date()) else {
+            return nil
+        }
+
+        return trainingSessions.first { todayWeek.contains($0.date) }?.weekLabel
+    }
+
+    private var scheduleDateRangeText: String {
+        guard let firstDate = visibleSessions.first?.date,
+              let lastDate = visibleSessions.last?.date else { return "" }
+
+        let calendar = Calendar.current
+        let sameMonth = calendar.component(.month, from: firstDate) == calendar.component(.month, from: lastDate)
+        let sameYear = calendar.component(.year, from: firstDate) == calendar.component(.year, from: lastDate)
+
+        if sameMonth && sameYear {
+            let month = firstDate.formatted(.dateTime.month(.abbreviated))
+            let firstDay = firstDate.formatted(.dateTime.day())
+            let lastDay = lastDate.formatted(.dateTime.day())
+            return "\(month) \(firstDay)-\(lastDay)"
+        }
+
+        return "\(firstDate.formatted(.dateTime.month(.abbreviated).day()))-\(lastDate.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private var canJumpToTodaySchedule: Bool {
+        switch scheduleViewMode {
+        case .week:
+            guard let currentWeekLabel else { return false }
+            return activeWeekLabel != currentWeekLabel
+        case .month:
+            guard let currentMonthStart else { return false }
+            return activeMonthStart != currentMonthStart
+        }
+    }
+
+    private func canMoveSchedule(by offset: Int) -> Bool {
+        switch scheduleViewMode {
+        case .week:
+            canMoveWeek(by: offset)
+        case .month:
+            canMoveMonth(by: offset)
+        }
+    }
+
+    private func canMoveWeek(by offset: Int) -> Bool {
+        guard let activeWeekLabel,
+              let currentIndex = weekLabels.firstIndex(of: activeWeekLabel) else { return false }
+
+        let nextIndex = currentIndex + offset
+        return nextIndex >= 0 && nextIndex < weekLabels.count
+    }
+
+    private func canMoveMonth(by offset: Int) -> Bool {
+        guard let activeMonthStart,
+              let currentIndex = monthStarts.firstIndex(of: activeMonthStart) else { return false }
+
+        let nextIndex = currentIndex + offset
+        return nextIndex >= 0 && nextIndex < monthStarts.count
+    }
+
+    private func moveSchedule(by offset: Int) {
+        switch scheduleViewMode {
+        case .week:
+            moveWeek(by: offset)
+        case .month:
+            moveMonth(by: offset)
+        }
+    }
+
+    private func jumpToTodaySchedule() {
+        guard canJumpToTodaySchedule else { return }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            switch scheduleViewMode {
+            case .week:
+                selectedWeekLabel = currentWeekLabel
+            case .month:
+                selectedMonthStart = currentMonthStart
+
+                if let currentMonthStart,
+                   let firstSession = trainingSessions.first(where: { monthStart(for: $0.date) == currentMonthStart }) {
+                    selectedWeekLabel = firstSession.weekLabel
+                }
+            }
+        }
+
+        Haptics.light()
+    }
+
+    private func moveWeek(by offset: Int) {
+        guard let activeWeekLabel,
+              let currentIndex = weekLabels.firstIndex(of: activeWeekLabel) else { return }
+
+        let nextIndex = min(max(currentIndex + offset, 0), weekLabels.count - 1)
+        guard nextIndex != currentIndex else { return }
+
+        let nextWeekLabel = weekLabels[nextIndex]
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedWeekLabel = nextWeekLabel
+
+            if let firstSession = trainingSessions.first(where: { $0.weekLabel == nextWeekLabel }) {
+                selectedMonthStart = monthStart(for: firstSession.date)
+            }
+        }
+
+        Haptics.light()
+    }
+
+    private func moveMonth(by offset: Int) {
+        guard let activeMonthStart,
+              let currentIndex = monthStarts.firstIndex(of: activeMonthStart) else { return }
+
+        let nextIndex = min(max(currentIndex + offset, 0), monthStarts.count - 1)
+        guard nextIndex != currentIndex else { return }
+
+        let nextMonthStart = monthStarts[nextIndex]
+        guard let nextSession = trainingSessions.first(where: { monthStart(for: $0.date) == nextMonthStart }) else { return }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedMonthStart = nextMonthStart
+            selectedWeekLabel = nextSession.weekLabel
+        }
+
+        Haptics.light()
+    }
+
+    private func monthStart(for date: Date) -> Date {
+        let components = Calendar.current.dateComponents([.year, .month], from: date)
+        return Calendar.current.date(from: components) ?? Calendar.current.startOfDay(for: date)
+    }
+}
+
+private enum TrainingScheduleViewMode: String, CaseIterable, Identifiable {
+    case week
+    case month
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .week:
+            "Week"
+        case .month:
+            "Month"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .week:
+            "calendar"
+        case .month:
+            "calendar.badge.clock"
+        }
+    }
+
+    var previousAccessibilityLabel: String {
+        switch self {
+        case .week:
+            "Previous Week"
+        case .month:
+            "Previous Month"
+        }
+    }
+
+    var nextAccessibilityLabel: String {
+        switch self {
+        case .week:
+            "Next Week"
+        case .month:
+            "Next Month"
+        }
     }
 }
 
