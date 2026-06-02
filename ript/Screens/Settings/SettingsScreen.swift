@@ -310,6 +310,7 @@ struct SettingsScreen: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.large)
+        .toolbar(.hidden, for: .tabBar)
         .scrollDismissesKeyboard(.interactively)
         .onChange(of: workoutReminderEnabled) { refreshNotificationSchedule() }
         .onChange(of: fuelReminderEnabled) { refreshNotificationSchedule() }
