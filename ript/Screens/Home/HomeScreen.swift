@@ -15,6 +15,8 @@ struct HomeScreen: View {
 
     @ObservedObject var homeVM: HomeViewModel
     @Binding var selectedTab: AppTab
+    @AppStorage("homeCardOrder") private var homeCardOrderStorage: String = ""
+    @State private var showHomeCustomizer: Bool = false
 
     init(homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
         self.homeVM = homeVM
@@ -35,14 +37,26 @@ struct HomeScreen: View {
     }
 
     private var streak: Int {
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: Date())
+        let hasCompletedToday = allDays.first { calendar.isDate($0.date, inSameDayAs: todayStart) }?.completedHabits.isEmpty == false
+        let startDate = hasCompletedToday ? todayStart : calendar.date(byAdding: .day, value: -1, to: todayStart)!
+
+        return completedDayStreak(startingAt: startDate)
+    }
+
+    private func completedDayStreak(startingAt startDate: Date) -> Int {
+        let calendar = Calendar.current
         var count = 0
-        var date = Calendar.current.startOfDay(for: Date())
+        var date = calendar.startOfDay(for: startDate)
+
         while true {
-            if let d = allDays.first(where: { $0.date == date }), d.completedHabits.isEmpty == false {
+            if let d = allDays.first(where: { calendar.isDate($0.date, inSameDayAs: date) }), d.completedHabits.isEmpty == false {
                 count += 1
-                date = Calendar.current.date(byAdding: .day, value: -1, to: date)!
+                date = calendar.date(byAdding: .day, value: -1, to: date)!
             } else { break }
         }
+
         return count
     }
 
@@ -135,6 +149,10 @@ struct HomeScreen: View {
         return reflections.filter { week.contains($0.date) }.count
     }
 
+    private var orderedHomeCards: [HomeCardKind] {
+        HomeCardKind.cards(from: homeCardOrderStorage)
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -149,30 +167,9 @@ struct HomeScreen: View {
                         }
                     }
 
-                    HomeScoreCard(
-                        progress: progress,
-                        completedWins: today.completedHabits.count,
-                        totalWins: HabitType.allCases.count,
-                        xp: today.xpEarned
-                    )
-                    
-                    DailyWinsCard(today: today, onToggle: toggle)
-
-                    HomeTodayPlanCard(
-                        session: activeSession,
-                        fuelProfile: fuelProfile,
-                        readiness: coachContext.readiness
-                    )
-                    
-                    HomeNextActionCard(action: nextAction) {
-                        selectedTab = nextAction.tab
+                    ForEach(orderedHomeCards) { card in
+                        homeCard(card)
                     }
-
-                    HomeMomentumCard(
-                        streak: streak,
-                        workoutsCompleted: workoutsCompletedThisWeek,
-                        journalEntries: journalEntriesThisWeek
-                    )
 
                     if today.perfectDay {
                         Text("Perfect Day! +50 XP")
@@ -181,6 +178,15 @@ struct HomeScreen: View {
                             .symbolEffect(.bounce)
                             .frame(maxWidth: .infinity)
                     }
+
+                    Button {
+                        showHomeCustomizer = true
+                    } label: {
+                        Text("Customize Home")
+                            .tint(.accentColor)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .accessibilityLabel("Customize Home")
                 }
                 .padding()
             }
@@ -195,6 +201,45 @@ struct HomeScreen: View {
                     .accessibilityLabel("Settings")
                 }
             }
+            .sheet(isPresented: $showHomeCustomizer) {
+                NavigationStack {
+                    HomeCustomizeSheet(cards: orderedHomeCards) { cards in
+                        homeCardOrderStorage = HomeCardKind.storageValue(for: cards)
+                    }
+                }
+                .presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func homeCard(_ card: HomeCardKind) -> some View {
+        switch card {
+        case .score:
+            HomeScoreCard(
+                progress: progress,
+                completedWins: today.completedHabits.count,
+                totalWins: HabitType.allCases.count,
+                xp: today.xpEarned
+            )
+        case .dailyWins:
+            DailyWinsCard(today: today, onToggle: toggle)
+        case .todaysPlan:
+            HomeTodayPlanCard(
+                session: activeSession,
+                fuelProfile: fuelProfile,
+                readiness: coachContext.readiness
+            )
+        case .nextAction:
+            HomeNextActionCard(action: nextAction) {
+                selectedTab = nextAction.tab
+            }
+        case .momentum:
+            HomeMomentumCard(
+                streak: streak,
+                workoutsCompleted: workoutsCompletedThisWeek,
+                journalEntries: journalEntriesThisWeek
+            )
         }
     }
 
@@ -219,5 +264,105 @@ struct HomeScreen: View {
         }
         today.xpEarned = max(0, today.xpEarned)
         try? context.save()
+    }
+}
+
+enum HomeCardKind: String, CaseIterable, Identifiable {
+    case score
+    case dailyWins
+    case todaysPlan
+    case nextAction
+    case momentum
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .score:
+            return "Daily Progress"
+        case .dailyWins:
+            return "Daily Wins"
+        case .todaysPlan:
+            return "Today's Plan"
+        case .nextAction:
+            return "Next Action"
+        case .momentum:
+            return "Momentum"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .score:
+            return "chart.line.uptrend.xyaxis"
+        case .dailyWins:
+            return "checkmark.circle.fill"
+        case .todaysPlan:
+            return "calendar"
+        case .nextAction:
+            return "arrow.right.circle.fill"
+        case .momentum:
+            return "flame.fill"
+        }
+    }
+
+    static func cards(from storage: String) -> [HomeCardKind] {
+        var cards: [HomeCardKind] = []
+
+        for rawValue in storage.split(separator: ",").map(String.init) {
+            guard let card = HomeCardKind(rawValue: rawValue), cards.contains(card) == false else { continue }
+            cards.append(card)
+        }
+
+        for card in allCases where cards.contains(card) == false {
+            cards.append(card)
+        }
+
+        return cards
+    }
+
+    static func storageValue(for cards: [HomeCardKind]) -> String {
+        cards.map(\.rawValue).joined(separator: ",")
+    }
+}
+
+struct HomeCustomizeSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var cards: [HomeCardKind]
+    let onSave: ([HomeCardKind]) -> Void
+
+    init(cards: [HomeCardKind], onSave: @escaping ([HomeCardKind]) -> Void) {
+        _cards = State(initialValue: cards)
+        self.onSave = onSave
+    }
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(cards) { card in
+                    Label(card.title, systemImage: card.systemImage)
+                }
+                .onMove { source, destination in
+                    cards.move(fromOffsets: source, toOffset: destination)
+                }
+            }
+        }
+        .environment(\.editMode, .constant(.active))
+        .navigationTitle("Customize Home")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Reset") {
+                    cards = HomeCardKind.allCases
+                }
+            }
+
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    onSave(cards)
+                    dismiss()
+                }
+            }
+        }
     }
 }

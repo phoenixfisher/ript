@@ -428,7 +428,7 @@ struct CoachAIConnectionSheet: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Label("AI Coach", systemImage: "sparkles")
+                            Label("AI-Powered Responses", systemImage: "sparkles")
                                 .font(.headline)
                                 .foregroundStyle(.primary)
 
