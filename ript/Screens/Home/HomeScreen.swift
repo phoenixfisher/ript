@@ -190,7 +190,7 @@ struct HomeScreen: View {
                 }
                 .padding()
             }
-            .navigationTitle("Ript")
+            .navigationTitle("Home")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {

@@ -60,7 +60,7 @@ struct WorkoutsScreen: View {
                                     }
                                 } label: {
                                     HStack(spacing: 4) {
-                                        Text(scheduleSectionTitle)
+                                        Text(scheduleViewMode == .week ? "Week" : "Month")
                                             .font(.headline)
 
                                         Image(systemName: "chevron.down")
@@ -219,17 +219,18 @@ struct WorkoutsScreen: View {
         todayWeekTargetLabel
     }
 
-    private var scheduleSectionTitle: String {
-        switch scheduleViewMode {
-        case .week:
-            guard let activeWeekLabel else { return "This Week" }
-            return activeWeekLabel == currentWeekLabel ? "This Week" : "Week"
-        case .month:
-            guard let activeMonthStart,
-                  let currentMonthStart else { return "Month" }
-            return activeMonthStart == currentMonthStart ? "This Month" : "Month"
-        }
-    }
+    // TODO: This variable is now unnecessary, remove anything that only this used
+//    private var scheduleSectionTitle: String {
+//        switch scheduleViewMode {
+//        case .week:
+//            guard let activeWeekLabel else { return "Week" }
+//            return activeWeekLabel == currentWeekLabel ? "Week" : "Week"
+//        case .month:
+//            guard let activeMonthStart,
+//                  let currentMonthStart else { return "Month" }
+//            return activeMonthStart == currentMonthStart ? "Month" : "Month"
+//        }
+//    }
 
     private var weekLabels: [String] {
         Dictionary(grouping: trainingSessions, by: \.weekLabel)
@@ -480,12 +481,16 @@ private struct TrainingMonthCalendar: View {
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(calendarDays) { day in
                     if let date = day.date {
-                        NavigationLink {
-                            TrainingDayDetail(date: date, sessions: day.sessions)
-                        } label: {
+                        if let session = day.sessions.first {
+                            NavigationLink {
+                                TrainingSessionDetail(session: session)
+                            } label: {
+                                TrainingCalendarDayCell(date: date, sessions: day.sessions)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
                             TrainingCalendarDayCell(date: date, sessions: day.sessions)
                         }
-                        .buttonStyle(.plain)
                     } else {
                         Color.clear
                             .frame(height: 58)
@@ -593,41 +598,6 @@ private struct TrainingCalendarDayCell: View {
         }
 
         return sessions.isEmpty ? Color.white.opacity(0.04) : Color.white.opacity(0.08)
-    }
-}
-
-private struct TrainingDayDetail: View {
-    var date: Date
-    var sessions: [TrainingSession]
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text(date.formatted(date: .complete, time: .omitted))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-
-                if sessions.isEmpty {
-                    Text("No workouts scheduled.")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                } else {
-                    ForEach(sessions) { session in
-                        NavigationLink {
-                            TrainingSessionDetail(session: session)
-                        } label: {
-                            TrainingWeekRow(session: session, isToday: Calendar.current.isDateInToday(session.date))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding()
-        }
-        .navigationTitle(date.formatted(.dateTime.month(.abbreviated).day()))
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
