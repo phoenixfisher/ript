@@ -121,6 +121,28 @@ enum CoachAIResponseMode: String, CaseIterable, Identifiable {
         }
     }
 
+    var responseGuidance: String {
+        switch self {
+        case .fast:
+            return "Fast mode: reply in 1 to 3 short sentences, no bullets, and stay under 55 words."
+        case .balanced:
+            return "Balanced mode: reply in 2 to 5 short sentences and stay direct."
+        case .best:
+            return "Best mode: reply in 3 to 6 short sentences when nuance helps, but stay concise."
+        }
+    }
+
+    var maxOutputTokens: Int {
+        switch self {
+        case .fast:
+            return 140
+        case .balanced:
+            return 260
+        case .best:
+            return 360
+        }
+    }
+
     static func mode(for model: String) -> CoachAIResponseMode {
         allCases.first { $0.model == model } ?? .balanced
     }
@@ -184,6 +206,7 @@ enum CoachAIService {
         \(question)
         """
 
+        let responseMode = CoachAIResponseMode.mode(for: model)
         let body = OpenAIResponsesRequest(
             model: model,
             instructions: """
@@ -193,9 +216,13 @@ enum CoachAIService {
             Prefer specific next actions over generic motivation.
             Do not invent completed workouts, meals, body metrics, or journal details.
             If injury, illness, chest pain, dizziness, or medical risk appears, advise the user to stop and seek qualified medical help.
-            Keep answers very brief.
+            Write like a text message, not an article.
+            Plain text only. Do not use Markdown formatting, headings, bold, italics, tables, code blocks, numbered lists, or bullet lists.
+            Do not include Markdown characters such as ###, **, __, backticks, or leading bullet symbols.
+            \(responseMode.responseGuidance)
             """,
-            input: input
+            input: input,
+            maxOutputTokens: responseMode.maxOutputTokens
         )
 
         request.httpBody = try JSONEncoder().encode(body)
@@ -228,6 +255,14 @@ private struct OpenAIResponsesRequest: Encodable {
     let model: String
     let instructions: String
     let input: String
+    let maxOutputTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case instructions
+        case input
+        case maxOutputTokens = "max_output_tokens"
+    }
 }
 
 private struct OpenAIResponsesResponse: Decodable {
