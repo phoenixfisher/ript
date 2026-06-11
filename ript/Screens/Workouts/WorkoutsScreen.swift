@@ -57,7 +57,7 @@ struct WorkoutsScreen: View {
                                 }
                                 .disabled(canJumpToTodaySchedule == false)
                                 .buttonStyle(.plain)
-                                .frame(width: 64, alignment: .leading)
+                                .frame(width: 84, alignment: .leading)
 
                                 HStack(spacing: 6) {
                                     Button {
@@ -119,7 +119,7 @@ struct WorkoutsScreen: View {
                                     .foregroundStyle(.primary)
                                 }
                                 .buttonStyle(.plain)
-                                .frame(width: 96, alignment: .trailing)
+                                .frame(width: 84, alignment: .trailing)
                             }
 
                             Group {
@@ -546,6 +546,12 @@ private struct TrainingCalendarDay: Identifiable {
     let sessions: [TrainingSession]
 }
 
+private struct TrainingCalendarWorkoutDot: Identifiable {
+    let id: UUID
+    let kind: TrainingSegmentKind
+    let isCompleted: Bool
+}
+
 private struct TrainingCalendarDayCell: View {
     var date: Date
     var sessions: [TrainingSession]
@@ -558,12 +564,20 @@ private struct TrainingCalendarDayCell: View {
         calendar.isDateInToday(date)
     }
 
-    private var workoutKinds: [TrainingSegmentKind] {
-        let kinds = Set(sessions.flatMap { session in
-            session.segments.map(\.kind)
-        })
+    private var workoutDots: [TrainingCalendarWorkoutDot] {
+        sessions.flatMap { session in
+            session.segments.map { segment in
+                TrainingCalendarWorkoutDot(
+                    id: segment.id,
+                    kind: segment.kind,
+                    isCompleted: segment.isCompleted
+                )
+            }
+        }
+    }
 
-        return TrainingSegmentKind.allCases.filter { kinds.contains($0) }
+    private var isSessionComplete: Bool {
+        sessions.isEmpty == false && sessions.allSatisfy(\.isCompleted)
     }
 
     var body: some View {
@@ -571,23 +585,38 @@ private struct TrainingCalendarDayCell: View {
             Text(date.formatted(.dateTime.day()))
                 .font(.caption.weight(isToday ? .bold : .semibold))
                 .foregroundStyle(Color.primary)
+                .monospacedDigit()
+                .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 3) {
-                ForEach(workoutKinds.prefix(5), id: \.self) { kind in
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 7, maximum: 7), spacing: 4, alignment: .leading)],
+                alignment: .leading,
+                spacing: 3
+            ) {
+                ForEach(workoutDots) { dot in
                     Circle()
-                        .fill(kind.tint)
-                        .frame(width: 5, height: 5)
+                        .fill(dot.isCompleted ? dot.kind.tint : Color.clear)
+                        .stroke(dot.kind.tint, lineWidth: 1.5)
+                        .frame(width: 7, height: 7)
                 }
             }
-            .frame(height: 6, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 8, alignment: .leading)
         }
         .padding(7)
         .frame(height: 58)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cellBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(alignment: .topTrailing) {
+            if isSessionComplete {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.green)
+                    .padding(7)
+            }
+        }
     }
 
     private var cellBackground: Color {
