@@ -47,7 +47,7 @@ struct WorkoutsScreen: View {
                                     jumpToTodaySchedule()
                                 } label: {
                                     if canJumpToTodaySchedule {
-                                        Text("To Today")
+                                        Text("Today \(Image(systemName: "arrow.right"))")
                                             .font(.caption.weight(.semibold))
                                             .foregroundStyle(Color.primary)
                                             .padding(.horizontal, 9)
@@ -57,7 +57,7 @@ struct WorkoutsScreen: View {
                                 }
                                 .disabled(canJumpToTodaySchedule == false)
                                 .buttonStyle(.plain)
-                                .frame(width: 84, alignment: .leading)
+                                .frame(width: 90, alignment: .leading)
 
                                 HStack(spacing: 6) {
                                     Button {
@@ -119,7 +119,7 @@ struct WorkoutsScreen: View {
                                     .foregroundStyle(.primary)
                                 }
                                 .buttonStyle(.plain)
-                                .frame(width: 84, alignment: .trailing)
+                                .frame(width: 90, alignment: .trailing)
                             }
 
                             Group {
