@@ -701,9 +701,6 @@ struct TrainingSessionDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(session.date.formatted(date: .complete, time: .omitted))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                     Text(session.title)
                         .font(.largeTitle)
                         .bold()
@@ -757,7 +754,7 @@ struct TrainingSessionDetail: View {
             }
             .padding()
         }
-        .navigationTitle(session.weekLabel)
+        .navigationTitle(session.date.formatted(.dateTime.weekday().month().day()))
         .navigationBarTitleDisplayMode(.inline)
     }
 
