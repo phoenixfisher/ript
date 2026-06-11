@@ -120,14 +120,23 @@ struct WorkoutsScreen: View {
                                 .frame(width: 64, alignment: .trailing)
                             }
 
-                            VStack(spacing: 10) {
-                                ForEach(visibleSessions) { session in
-                                    NavigationLink {
-                                        TrainingSessionDetail(session: session)
-                                    } label: {
-                                        TrainingWeekRow(session: session, isToday: Calendar.current.isDateInToday(session.date))
+                            Group {
+                                switch scheduleViewMode {
+                                case .week:
+                                    VStack(spacing: 10) {
+                                        ForEach(weekSessions) { session in
+                                            NavigationLink {
+                                                TrainingSessionDetail(session: session)
+                                            } label: {
+                                                TrainingWeekRow(session: session, isToday: Calendar.current.isDateInToday(session.date))
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
                                     }
-                                    .buttonStyle(.plain)
+                                case .month:
+                                    if let activeMonthStart {
+                                        TrainingMonthCalendar(monthStart: activeMonthStart, sessions: monthSessions)
+                                    }
                                 }
                             }
                             .animation(.spring(response: 0.3, dampingFraction: 0.86), value: activeWeekLabel)
@@ -203,11 +212,11 @@ struct WorkoutsScreen: View {
             return selectedWeekLabel
         }
 
-        return currentWeekLabel ?? weekLabels.first
+        return currentWeekLabel ?? nextSession?.weekLabel ?? weekLabels.first
     }
 
     private var currentWeekLabel: String? {
-        todayWeekTargetLabel ?? (todaysSession ?? nextSession)?.weekLabel
+        todayWeekTargetLabel
     }
 
     private var scheduleSectionTitle: String {
@@ -243,7 +252,7 @@ struct WorkoutsScreen: View {
             return selectedMonthStart
         }
 
-        return currentMonthStart ?? monthStarts.first
+        return currentMonthStart ?? (todaysSession ?? nextSession).map { monthStart(for: $0.date) } ?? monthStarts.first
     }
 
     private var currentMonthStart: Date? {
@@ -251,7 +260,7 @@ struct WorkoutsScreen: View {
             return todayMonthStart
         }
 
-        return (todaysSession ?? nextSession).map { monthStart(for: $0.date) }
+        return nil
     }
 
     private var todayMonthStart: Date {
@@ -271,9 +280,20 @@ struct WorkoutsScreen: View {
     }
 
     private var scheduleDateRangeText: String {
-        guard let firstDate = visibleSessions.first?.date,
-              let lastDate = visibleSessions.last?.date else { return "" }
+        switch scheduleViewMode {
+        case .week:
+            guard let firstDate = weekSessions.first?.date,
+                  let lastDate = weekSessions.last?.date else { return "" }
+            return formattedDateRange(from: firstDate, to: lastDate)
+        case .month:
+            guard let activeMonthStart,
+                  let monthInterval = Calendar.current.dateInterval(of: .month, for: activeMonthStart),
+                  let lastDate = Calendar.current.date(byAdding: .day, value: -1, to: monthInterval.end) else { return "" }
+            return formattedDateRange(from: activeMonthStart, to: lastDate)
+        }
+    }
 
+    private func formattedDateRange(from firstDate: Date, to lastDate: Date) -> String {
         let calendar = Calendar.current
         let sameMonth = calendar.component(.month, from: firstDate) == calendar.component(.month, from: lastDate)
         let sameYear = calendar.component(.year, from: firstDate) == calendar.component(.year, from: lastDate)
@@ -436,6 +456,178 @@ private enum TrainingScheduleViewMode: String, CaseIterable, Identifiable {
         case .month:
             "Next Month"
         }
+    }
+}
+
+private struct TrainingMonthCalendar: View {
+    var monthStart: Date
+    var sessions: [TrainingSession]
+
+    private let calendar = Calendar.current
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(calendarDays) { day in
+                    if let date = day.date {
+                        NavigationLink {
+                            TrainingDayDetail(date: date, sessions: day.sessions)
+                        } label: {
+                            TrainingCalendarDayCell(date: date, sessions: day.sessions)
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                            .frame(height: 58)
+                    }
+                }
+            }
+        }
+    }
+
+    private var weekdaySymbols: [String] {
+        let symbols = calendar.shortWeekdaySymbols
+        let startIndex = max(calendar.firstWeekday - 1, 0)
+        return Array(symbols[startIndex...] + symbols[..<startIndex])
+    }
+
+    private var calendarDays: [TrainingCalendarDay] {
+        guard let dayRange = calendar.range(of: .day, in: .month, for: monthStart) else { return [] }
+
+        let leadingBlankCount = leadingBlankDays(for: monthStart)
+        var days = (0..<leadingBlankCount).map { index in
+            TrainingCalendarDay(id: "blank-\(index)", date: nil, sessions: [])
+        }
+
+        days += dayRange.compactMap { day -> TrainingCalendarDay? in
+            guard let date = calendar.date(byAdding: .day, value: day - 1, to: monthStart) else { return nil }
+            let daySessions = sessions.filter { calendar.isDate($0.date, inSameDayAs: date) }
+            return TrainingCalendarDay(
+                id: "day-\(date.timeIntervalSinceReferenceDate)",
+                date: date,
+                sessions: daySessions
+            )
+        }
+
+        let trailingBlankCount = (7 - days.count % 7) % 7
+        days += (0..<trailingBlankCount).map { index in
+            TrainingCalendarDay(id: "trailing-blank-\(index)", date: nil, sessions: [])
+        }
+
+        return days
+    }
+
+    private func leadingBlankDays(for date: Date) -> Int {
+        let weekday = calendar.component(.weekday, from: date)
+        return (weekday - calendar.firstWeekday + 7) % 7
+    }
+}
+
+private struct TrainingCalendarDay: Identifiable {
+    let id: String
+    let date: Date?
+    let sessions: [TrainingSession]
+}
+
+private struct TrainingCalendarDayCell: View {
+    var date: Date
+    var sessions: [TrainingSession]
+
+    private var calendar: Calendar {
+        Calendar.current
+    }
+
+    private var isToday: Bool {
+        calendar.isDateInToday(date)
+    }
+
+    private var workoutKinds: [TrainingSegmentKind] {
+        let kinds = Set(sessions.flatMap { session in
+            session.segments.map(\.kind)
+        })
+
+        return TrainingSegmentKind.allCases.filter { kinds.contains($0) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(date.formatted(.dateTime.day()))
+                .font(.caption.weight(isToday ? .bold : .semibold))
+                .foregroundStyle(isToday ? Color.black : Color.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 3) {
+                ForEach(workoutKinds.prefix(5), id: \.self) { kind in
+                    Circle()
+                        .fill(kind.tint)
+                        .frame(width: 5, height: 5)
+                }
+            }
+            .frame(height: 6, alignment: .leading)
+        }
+        .padding(7)
+        .frame(height: 58)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(cellBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(isToday ? Color.green.opacity(0.65) : Color.white.opacity(0.06), lineWidth: 1)
+        }
+    }
+
+    private var cellBackground: Color {
+        if isToday {
+            return .green
+        }
+
+        return sessions.isEmpty ? Color.white.opacity(0.04) : Color.white.opacity(0.08)
+    }
+}
+
+private struct TrainingDayDetail: View {
+    var date: Date
+    var sessions: [TrainingSession]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(date.formatted(date: .complete, time: .omitted))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if sessions.isEmpty {
+                    Text("No workouts scheduled.")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    ForEach(sessions) { session in
+                        NavigationLink {
+                            TrainingSessionDetail(session: session)
+                        } label: {
+                            TrainingWeekRow(session: session, isToday: Calendar.current.isDateInToday(session.date))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle(date.formatted(.dateTime.month(.abbreviated).day()))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
