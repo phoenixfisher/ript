@@ -10,7 +10,7 @@ struct HomeHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 10) {
-                Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
+                Text(date.formatted(.dateTime.weekday(.wide).month(.wide).day()))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
