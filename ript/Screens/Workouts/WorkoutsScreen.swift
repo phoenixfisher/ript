@@ -43,34 +43,21 @@ struct WorkoutsScreen: View {
                     if visibleSessions.isEmpty == false {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 10) {
-                                Menu {
-                                    ForEach(TrainingScheduleViewMode.allCases) { mode in
-                                        Button {
-                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
-                                                scheduleViewMode = mode
-
-                                                if mode == .month,
-                                                   let date = weekSessions.first?.date {
-                                                    selectedMonthStart = monthStart(for: date)
-                                                }
-                                            }
-                                        } label: {
-                                            Label(mode.title, systemImage: scheduleViewMode == mode ? "checkmark" : mode.systemImage)
-                                        }
-                                    }
+                                Button {
+                                    jumpToTodaySchedule()
                                 } label: {
-                                    HStack(spacing: 4) {
-                                        Text(scheduleViewMode == .week ? "Week" : "Month")
-                                            .font(.headline)
-
-                                        Image(systemName: "chevron.down")
-                                            .font(.caption2.weight(.bold))
-                                            .foregroundStyle(.secondary)
+                                    if canJumpToTodaySchedule {
+                                        Text("To Today")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(Color.primary)
+                                            .padding(.horizontal, 9)
+                                            .frame(height: 28)
+                                            .background(Color.white.opacity(0.06), in: Capsule())
                                     }
-                                    .foregroundStyle(.primary)
                                 }
+                                .disabled(canJumpToTodaySchedule == false)
                                 .buttonStyle(.plain)
-                                .frame(width: 96, alignment: .leading)
+                                .frame(width: 64, alignment: .leading)
 
                                 HStack(spacing: 6) {
                                     Button {
@@ -104,20 +91,35 @@ struct WorkoutsScreen: View {
                                     .accessibilityLabel(scheduleViewMode.nextAccessibilityLabel)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .center)
+                                
+                                Menu {
+                                    ForEach(TrainingScheduleViewMode.allCases) { mode in
+                                        Button {
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+                                                scheduleViewMode = mode
 
-                                Button {
-                                    jumpToTodaySchedule()
+                                                if mode == .month,
+                                                   let date = weekSessions.first?.date {
+                                                    selectedMonthStart = monthStart(for: date)
+                                                }
+                                            }
+                                        } label: {
+                                            Label(mode.title, systemImage: scheduleViewMode == mode ? "checkmark" : mode.systemImage)
+                                        }
+                                    }
                                 } label: {
-                                    Text("Today")
-                                        .font(.caption.weight(.semibold))
-                                        .foregroundStyle(canJumpToTodaySchedule ? Color.primary : Color.secondary.opacity(0.35))
-                                        .padding(.horizontal, 9)
-                                        .frame(height: 28)
-                                        .background(Color.white.opacity(0.06), in: Capsule())
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.secondary)
+                                        
+                                        Text(scheduleViewMode == .week ? "Week" : "Month")
+                                            .font(.headline)
+                                    }
+                                    .foregroundStyle(.primary)
                                 }
-                                .disabled(canJumpToTodaySchedule == false)
                                 .buttonStyle(.plain)
-                                .frame(width: 64, alignment: .trailing)
+                                .frame(width: 96, alignment: .trailing)
                             }
 
                             Group {
@@ -568,7 +570,7 @@ private struct TrainingCalendarDayCell: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(date.formatted(.dateTime.day()))
                 .font(.caption.weight(isToday ? .bold : .semibold))
-                .foregroundStyle(isToday ? Color.black : Color.primary)
+                .foregroundStyle(Color.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 0)
@@ -586,15 +588,11 @@ private struct TrainingCalendarDayCell: View {
         .frame(height: 58)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cellBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(isToday ? Color.green.opacity(0.65) : Color.white.opacity(0.06), lineWidth: 1)
-        }
     }
 
     private var cellBackground: Color {
         if isToday {
-            return .green
+            return .green.opacity(0.2)
         }
 
         return sessions.isEmpty ? Color.white.opacity(0.04) : Color.white.opacity(0.08)
