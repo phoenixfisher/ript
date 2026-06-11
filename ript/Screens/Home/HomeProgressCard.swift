@@ -5,6 +5,8 @@ struct HomeScoreCard: View {
     var completedWins: Int
     var totalWins: Int
     var xp: Int
+    var today: Day
+    var onToggle: (HabitType) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -39,6 +41,20 @@ struct HomeScoreCard: View {
             }
             .font(.caption)
             .fontWeight(.semibold)
+
+            Divider()
+                .overlay(Color.white.opacity(0.08))
+
+            VStack(spacing: 10) {
+                ForEach(HabitType.allCases) { habit in
+                    HomeHabitRow(
+                        habit: habit,
+                        isChecked: today.completedHabits.contains(habit)
+                    ) {
+                        onToggle(habit)
+                    }
+                }
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)

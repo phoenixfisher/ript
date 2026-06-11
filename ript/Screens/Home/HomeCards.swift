@@ -84,37 +84,6 @@ struct HomePlanRow: View {
     }
 }
 
-struct DailyWinsCard: View {
-    var today: Day
-    var onToggle: (HabitType) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Daily Wins")
-                    .font(.headline)
-                Spacer()
-                Text("\(today.completedHabits.count)/\(HabitType.allCases.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(spacing: 10) {
-                ForEach(HabitType.allCases) { habit in
-                    HomeHabitRow(
-                        habit: habit,
-                        isChecked: today.completedHabits.contains(habit)
-                    ) {
-                        onToggle(habit)
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
-    }
-}
-
 struct HomeHabitRow: View {
     var habit: HabitType
     var isChecked: Bool

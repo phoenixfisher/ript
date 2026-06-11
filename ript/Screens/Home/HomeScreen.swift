@@ -220,10 +220,10 @@ struct HomeScreen: View {
                 progress: progress,
                 completedWins: today.completedHabits.count,
                 totalWins: HabitType.allCases.count,
-                xp: today.xpEarned
+                xp: today.xpEarned,
+                today: today,
+                onToggle: toggle
             )
-        case .dailyWins:
-            DailyWinsCard(today: today, onToggle: toggle)
         case .todaysPlan:
             HomeTodayPlanCard(
                 session: activeSession,
@@ -269,7 +269,6 @@ struct HomeScreen: View {
 
 enum HomeCardKind: String, CaseIterable, Identifiable {
     case score
-    case dailyWins
     case todaysPlan
     case nextAction
     case momentum
@@ -280,8 +279,6 @@ enum HomeCardKind: String, CaseIterable, Identifiable {
         switch self {
         case .score:
             return "Daily Progress"
-        case .dailyWins:
-            return "Daily Wins"
         case .todaysPlan:
             return "Today's Plan"
         case .nextAction:
@@ -295,8 +292,6 @@ enum HomeCardKind: String, CaseIterable, Identifiable {
         switch self {
         case .score:
             return "chart.line.uptrend.xyaxis"
-        case .dailyWins:
-            return "checkmark.circle.fill"
         case .todaysPlan:
             return "calendar"
         case .nextAction:
