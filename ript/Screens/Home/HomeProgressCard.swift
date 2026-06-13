@@ -5,7 +5,7 @@ struct HomeScoreCard: View {
     var completedWins: Int
     var totalWins: Int
     var xp: Int
-    var today: Day
+    var completedHabits: [HabitType]
     var onToggle: (HabitType) -> Void
 
     var body: some View {
@@ -49,7 +49,7 @@ struct HomeScoreCard: View {
                 ForEach(HabitType.allCases) { habit in
                     HomeHabitRow(
                         habit: habit,
-                        isChecked: today.completedHabits.contains(habit)
+                        isChecked: completedHabits.contains(habit)
                     ) {
                         onToggle(habit)
                     }

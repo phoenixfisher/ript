@@ -17,20 +17,30 @@ struct HomeScreen: View {
     @Binding var selectedTab: AppTab
     @AppStorage("homeCardOrder") private var homeCardOrderStorage: String = ""
     @State private var showHomeCustomizer: Bool = false
+    @State private var createdToday: Day?
 
     init(homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
         self.homeVM = homeVM
         self._selectedTab = selectedTab
     }
 
-    private var today: Day {
-        if let d = todayArray.first { return d }
-        let new = Day()
-        context.insert(new)
-        return new
+    private var today: Day? {
+        todayArray.first ?? createdToday
     }
 
-    private var progress: Double { Double(today.completedHabits.count) / Double(HabitType.allCases.count) }
+    private var completedHabitsToday: [HabitType] {
+        today?.completedHabits ?? []
+    }
+
+    private var todayXP: Int {
+        today?.xpEarned ?? 0
+    }
+
+    private var isPerfectDay: Bool {
+        today?.perfectDay ?? false
+    }
+
+    private var progress: Double { Double(completedHabitsToday.count) / Double(HabitType.allCases.count) }
 
     private var totalXP: Int {
         allDays.reduce(0) { $0 + $1.xpEarned }
@@ -111,7 +121,7 @@ struct HomeScreen: View {
             )
         }
 
-        if today.completedHabits.contains(.proteinEveryMeal) == false {
+        if completedHabitsToday.contains(.proteinEveryMeal) == false {
             return HomeNextAction(
                 title: "Review Meals",
                 subtitle: fuelProfile.title,
@@ -171,7 +181,7 @@ struct HomeScreen: View {
                         homeCard(card)
                     }
 
-                    if today.perfectDay {
+                    if isPerfectDay {
                         Text("Perfect Day! +50 XP")
                             .font(.headline)
                             .foregroundStyle(.green)
@@ -218,10 +228,10 @@ struct HomeScreen: View {
         case .score:
             HomeScoreCard(
                 progress: progress,
-                completedWins: today.completedHabits.count,
+                completedWins: completedHabitsToday.count,
                 totalWins: HabitType.allCases.count,
-                xp: today.xpEarned,
-                today: today,
+                xp: todayXP,
+                completedHabits: completedHabitsToday,
                 onToggle: toggle
             )
         case .todaysPlan:
@@ -244,26 +254,51 @@ struct HomeScreen: View {
     }
 
     private func toggle(_ habit: HabitType) {
-        let wasPerfect = today.perfectDay
-        var list = today.completedHabits
+        let day = todayForMutation()
+        let wasPerfect = day.perfectDay
+        var list = day.completedHabits
         if let idx = list.firstIndex(of: habit) {
             list.remove(at: idx)
-            today.xpEarned -= habit.xpReward
+            day.xpEarned -= habit.xpReward
         } else {
             list.append(habit)
-            today.xpEarned += habit.xpReward
+            day.xpEarned += habit.xpReward
             Haptics.success()
         }
-        today.completedHabits = list
+        day.completedHabits = list
         let allDone = HabitType.allCases.allSatisfy { list.contains($0) }
-        today.perfectDay = allDone
+        day.perfectDay = allDone
         if allDone && wasPerfect == false {
-            today.xpEarned += 50
+            day.xpEarned += 50
         } else if allDone == false && wasPerfect {
-            today.xpEarned -= 50
+            day.xpEarned -= 50
         }
-        today.xpEarned = max(0, today.xpEarned)
-        try? context.save()
+        day.xpEarned = max(0, day.xpEarned)
+
+        do {
+            try context.save()
+            createdToday = day
+        } catch {
+        }
+    }
+
+    private func todayForMutation() -> Day {
+        if let today {
+            return today
+        }
+
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        var descriptor = FetchDescriptor<Day>(predicate: #Predicate { $0.date == todayStart })
+        descriptor.fetchLimit = 1
+
+        if let existing = try? context.fetch(descriptor).first {
+            createdToday = existing
+            return existing
+        }
+
+        let newDay = Day(date: todayStart)
+        context.insert(newDay)
+        return newDay
     }
 }
 
