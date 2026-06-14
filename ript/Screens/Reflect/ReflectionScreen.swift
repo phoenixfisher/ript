@@ -2,6 +2,18 @@ import SwiftUI
 import SwiftData
 
 struct ReflectionScreen: View {
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                ReflectionContentView()
+                    .padding()
+            }
+            .navigationTitle("Reflect")
+        }
+    }
+}
+
+struct ReflectionContentView: View {
     @Environment(\.modelContext) private var context
     @Query(filter: { () -> Predicate<Reflection> in
         let todayStart = Calendar.current.startOfDay(for: Date())
@@ -58,164 +70,158 @@ struct ReflectionScreen: View {
     private let resultOptions = ["Won", "Mixed", "Missed"]
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    JournalSummaryCard(mood: mood, result: dayResult, tags: selectedTags)
+        VStack(alignment: .leading, spacing: 22) {
+            JournalSummaryCard(mood: mood, result: dayResult, tags: selectedTags)
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Mood")
-                            .font(.headline)
-                        MoodPicker(selectedMood: Binding(get: { mood }, set: { newValue in
-                            mood = newValue
-                            updateToday { $0.mood = newValue }
-                        }))
-                    }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Mood")
+                    .font(.headline)
+                MoodPicker(selectedMood: Binding(get: { mood }, set: { newValue in
+                    mood = newValue
+                    updateToday { $0.mood = newValue }
+                }))
+            }
 
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Day Result")
-                            .font(.headline)
-                        HStack(spacing: 8) {
-                            ForEach(resultOptions, id: \.self) { option in
-                                JournalChoiceButton(title: option, isSelected: dayResult == option) {
-                                    dayResult = option
-                                    didWin = option == "Won"
-                                    updateToday {
-                                        $0.dayResult = option
-                                        $0.didWin = option == "Won"
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Prompt Deck")
-                            .font(.headline)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(prompts, id: \.self) { prompt in
-                                    JournalChip(title: prompt, isSelected: selectedPrompt == prompt) {
-                                        selectedPrompt = prompt
-                                        updateToday { $0.prompt = prompt }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    JournalTextBlock(
-                        title: "Journal",
-                        prompt: selectedPrompt,
-                        text: Binding(get: { note }, set: { newValue in
-                            let trimmed = String(newValue.prefix(noteLimit))
-                            note = trimmed
-                            updateToday { $0.note = trimmed }
-                        }),
-                        limit: noteLimit,
-                        lineRange: 5...9
-                    )
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Three Lines")
-                            .font(.headline)
-
-                        JournalTextBlock(
-                            title: "Win",
-                            prompt: "What is one thing you did right?",
-                            text: Binding(get: { win }, set: { newValue in
-                                let trimmed = String(newValue.prefix(shortFieldLimit))
-                                win = trimmed
-                                updateToday { $0.win = trimmed }
-                            }),
-                            limit: shortFieldLimit,
-                            lineRange: 1...3
-                        )
-
-                        JournalTextBlock(
-                            title: "Hard Moment",
-                            prompt: "What tested you?",
-                            text: Binding(get: { obstacle }, set: { newValue in
-                                let trimmed = String(newValue.prefix(shortFieldLimit))
-                                obstacle = trimmed
-                                updateToday { $0.obstacle = trimmed }
-                            }),
-                            limit: shortFieldLimit,
-                            lineRange: 1...3
-                        )
-
-                        JournalTextBlock(
-                            title: "Tomorrow",
-                            prompt: "What is the first thing to get right?",
-                            text: Binding(get: { tomorrowFocus }, set: { newValue in
-                                let trimmed = String(newValue.prefix(shortFieldLimit))
-                                tomorrowFocus = trimmed
-                                updateToday { $0.tomorrowFocus = trimmed }
-                            }),
-                            limit: shortFieldLimit,
-                            lineRange: 1...3
-                        )
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Tags")
-                            .font(.headline)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
-                            ForEach(tagOptions, id: \.self) { tag in
-                                JournalChip(title: tag, isSelected: selectedTags.contains(tag)) {
-                                    toggleTag(tag)
-                                }
-                            }
-                        }
-                    }
-
-                    HStack {
-                        Button(role: .destructive) {
-                            resetToday()
-                        } label: {
-                            Label("Reset", systemImage: "arrow.counterclockwise")
-                        }
-
-                        Spacer()
-
-                        Button {
-                            save(force: true, showFeedback: true)
-                        } label: {
-                            Label("Save", systemImage: "square.and.arrow.down")
-                                .foregroundStyle(.black)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!isDirty)
-                    }
-
-                    if recentReflections.isEmpty == false {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Recent Journals")
-                                .font(.headline)
-
-                            ForEach(recentReflections) { reflection in
-                                RecentReflectionCard(reflection: reflection)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Day Result")
+                    .font(.headline)
+                HStack(spacing: 8) {
+                    ForEach(resultOptions, id: \.self) { option in
+                        JournalChoiceButton(title: option, isSelected: dayResult == option) {
+                            dayResult = option
+                            didWin = option == "Won"
+                            updateToday {
+                                $0.dayResult = option
+                                $0.didWin = option == "Won"
                             }
                         }
                     }
                 }
-                .padding()
             }
-            .navigationTitle("Reflect")
-            .task { hydrateFromModel() }
-            .onChange(of: todayArray.count) { hydrateFromModel() }
-            .overlay(alignment: .bottom) {
-                if showSavedToast {
-                    Text("Saved")
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.thinMaterial, in: Capsule())
-                        .padding(.bottom, 16)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Prompt Deck")
+                    .font(.headline)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(prompts, id: \.self) { prompt in
+                            JournalChip(title: prompt, isSelected: selectedPrompt == prompt) {
+                                selectedPrompt = prompt
+                                updateToday { $0.prompt = prompt }
+                            }
+                        }
+                    }
                 }
             }
-            .animation(.default, value: showSavedToast)
+
+            JournalTextBlock(
+                title: "Journal",
+                prompt: selectedPrompt,
+                text: Binding(get: { note }, set: { newValue in
+                    let trimmed = String(newValue.prefix(noteLimit))
+                    note = trimmed
+                    updateToday { $0.note = trimmed }
+                }),
+                limit: noteLimit,
+                lineRange: 5...9
+            )
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Three Lines")
+                    .font(.headline)
+
+                JournalTextBlock(
+                    title: "Win",
+                    prompt: "What is one thing you did right?",
+                    text: Binding(get: { win }, set: { newValue in
+                        let trimmed = String(newValue.prefix(shortFieldLimit))
+                        win = trimmed
+                        updateToday { $0.win = trimmed }
+                    }),
+                    limit: shortFieldLimit,
+                    lineRange: 1...3
+                )
+
+                JournalTextBlock(
+                    title: "Hard Moment",
+                    prompt: "What tested you?",
+                    text: Binding(get: { obstacle }, set: { newValue in
+                        let trimmed = String(newValue.prefix(shortFieldLimit))
+                        obstacle = trimmed
+                        updateToday { $0.obstacle = trimmed }
+                    }),
+                    limit: shortFieldLimit,
+                    lineRange: 1...3
+                )
+
+                JournalTextBlock(
+                    title: "Tomorrow",
+                    prompt: "What is the first thing to get right?",
+                    text: Binding(get: { tomorrowFocus }, set: { newValue in
+                        let trimmed = String(newValue.prefix(shortFieldLimit))
+                        tomorrowFocus = trimmed
+                        updateToday { $0.tomorrowFocus = trimmed }
+                    }),
+                    limit: shortFieldLimit,
+                    lineRange: 1...3
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Tags")
+                    .font(.headline)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], alignment: .leading, spacing: 8) {
+                    ForEach(tagOptions, id: \.self) { tag in
+                        JournalChip(title: tag, isSelected: selectedTags.contains(tag)) {
+                            toggleTag(tag)
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Button(role: .destructive) {
+                    resetToday()
+                } label: {
+                    Label("Reset", systemImage: "arrow.counterclockwise")
+                }
+
+                Spacer()
+
+                Button {
+                    save(force: true, showFeedback: true)
+                } label: {
+                    Label("Save", systemImage: "square.and.arrow.down")
+                        .foregroundStyle(.black)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isDirty)
+            }
+
+            if recentReflections.isEmpty == false {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Recent Journals")
+                        .font(.headline)
+
+                    ForEach(recentReflections) { reflection in
+                        RecentReflectionCard(reflection: reflection)
+                    }
+                }
+            }
         }
+        .task { hydrateFromModel() }
+        .onChange(of: todayArray.count) { hydrateFromModel() }
+        .overlay(alignment: .bottom) {
+            if showSavedToast {
+                Text("Saved")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
+                    .padding(.bottom, 16)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.default, value: showSavedToast)
     }
 
     private var recentReflections: [Reflection] {

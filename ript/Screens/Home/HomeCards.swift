@@ -120,6 +120,7 @@ struct HomeNextAction {
     var subtitle: String
     var systemImage: String
     var tab: AppTab
+    var wellnessSection: WellnessSection? = nil
     var tint: Color
 }
 

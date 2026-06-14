@@ -15,13 +15,19 @@ struct HomeScreen: View {
 
     @ObservedObject var homeVM: HomeViewModel
     @Binding var selectedTab: AppTab
+    @Binding var selectedWellnessSection: WellnessSection
     @AppStorage("homeCardOrder") private var homeCardOrderStorage: String = ""
     @State private var showHomeCustomizer: Bool = false
     @State private var createdToday: Day?
 
-    init(homeVM: HomeViewModel, selectedTab: Binding<AppTab>) {
+    init(
+        homeVM: HomeViewModel,
+        selectedTab: Binding<AppTab>,
+        selectedWellnessSection: Binding<WellnessSection>
+    ) {
         self.homeVM = homeVM
         self._selectedTab = selectedTab
+        self._selectedWellnessSection = selectedWellnessSection
     }
 
     private var today: Day? {
@@ -126,7 +132,8 @@ struct HomeScreen: View {
                 title: "Review Meals",
                 subtitle: fuelProfile.title,
                 systemImage: "fork.knife",
-                tab: .meals,
+                tab: .wellness,
+                wellnessSection: .fuel,
                 tint: .orange
             )
         }
@@ -136,7 +143,8 @@ struct HomeScreen: View {
                 title: "Reflect Tonight",
                 subtitle: "Log the win, hard moment, and tomorrow focus.",
                 systemImage: "moon.stars.fill",
-                tab: .reflect,
+                tab: .wellness,
+                wellnessSection: .journal,
                 tint: .purple
             )
         }
@@ -242,6 +250,9 @@ struct HomeScreen: View {
             )
         case .nextAction:
             HomeNextActionCard(action: nextAction) {
+                if let wellnessSection = nextAction.wellnessSection {
+                    selectedWellnessSection = wellnessSection
+                }
                 selectedTab = nextAction.tab
             }
         case .momentum:
