@@ -6,6 +6,7 @@ struct SettingsScreen: View {
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
     @Query(sort: \CoachMessage.createdAt, order: .reverse) private var coachMessages: [CoachMessage]
+    @Query(sort: \CoachConversation.updatedAt, order: .reverse) private var coachConversations: [CoachConversation]
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
 
     @AppStorage("profileName") private var profileName: String = ""
@@ -31,6 +32,7 @@ struct SettingsScreen: View {
     @AppStorage("fuelReminderEnabled") private var fuelReminderEnabled: Bool = false
     @AppStorage("reflectReminderEnabled") private var reflectReminderEnabled: Bool = true
     @AppStorage("streakReminderEnabled") private var streakReminderEnabled: Bool = false
+    @AppStorage("activeCoachConversationID") private var activeCoachConversationIDString: String = ""
     @State private var showSeededToast = false
     @State private var healthStatusMessage = "Not connected yet"
     @State private var pendingDestructiveAction: SettingsDestructiveAction?
@@ -255,11 +257,11 @@ struct SettingsScreen: View {
                     Button(role: .destructive) {
                         requestDestructive(.clearCoachMessages)
                     } label: {
-                        Label("Clear coach messages (\(coachMessages.count))", systemImage: "message.badge.filled.fill")
+                        Label("Clear coach chats (\(coachConversations.count))", systemImage: "message.badge.filled.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(coachMessages.isEmpty)
+                    .disabled(coachMessages.isEmpty && coachConversations.isEmpty)
 
                     Button(role: .destructive) {
                         requestDestructive(.clearJournalEntries)
@@ -410,6 +412,8 @@ struct SettingsScreen: View {
             SampleDataSeeder.resetTrainingPlan(context: context)
         case .clearCoachMessages:
             coachMessages.forEach { context.delete($0) }
+            coachConversations.forEach { context.delete($0) }
+            activeCoachConversationIDString = ""
             try? context.save()
         case .clearJournalEntries:
             reflections.forEach { context.delete($0) }
@@ -431,6 +435,7 @@ struct SettingsScreen: View {
         let bodyMetricItems = (try? context.fetch(FetchDescriptor<BodyMetric>())) ?? []
         let mealItems = (try? context.fetch(FetchDescriptor<MealIdea>())) ?? []
         let badgeItems = (try? context.fetch(FetchDescriptor<Badge>())) ?? []
+        let coachConversationItems = (try? context.fetch(FetchDescriptor<CoachConversation>())) ?? []
         let coachMessageItems = (try? context.fetch(FetchDescriptor<CoachMessage>())) ?? []
 
         dayItems.forEach { context.delete($0) }
@@ -440,7 +445,9 @@ struct SettingsScreen: View {
         bodyMetricItems.forEach { context.delete($0) }
         mealItems.forEach { context.delete($0) }
         badgeItems.forEach { context.delete($0) }
+        coachConversationItems.forEach { context.delete($0) }
         coachMessageItems.forEach { context.delete($0) }
+        activeCoachConversationIDString = ""
 
         try? context.save()
         SampleDataSeeder.seed(context: context)
@@ -469,7 +476,7 @@ enum SettingsDestructiveAction {
         case .resetTrainingPlan:
             return "Reset generated plan?"
         case .clearCoachMessages:
-            return "Clear coach messages?"
+            return "Clear coach chats?"
         case .clearJournalEntries:
             return "Clear journal entries?"
         case .resetAllLocalData:
@@ -482,7 +489,7 @@ enum SettingsDestructiveAction {
         case .resetTrainingPlan:
             return "This replaces the generated training sessions with the default Olympic triathlon plan."
         case .clearCoachMessages:
-            return "This removes the current coach chat history from this device."
+            return "This removes all coach conversations and messages from this device."
         case .clearJournalEntries:
             return "This removes all reflect/journal entries from this device."
         case .resetAllLocalData:
@@ -495,7 +502,7 @@ enum SettingsDestructiveAction {
         case .resetTrainingPlan:
             return "Reset Plan"
         case .clearCoachMessages:
-            return "Clear Messages"
+            return "Clear Chats"
         case .clearJournalEntries:
             return "Clear Journal"
         case .resetAllLocalData:

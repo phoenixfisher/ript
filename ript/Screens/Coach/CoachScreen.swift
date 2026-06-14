@@ -3,7 +3,9 @@ import SwiftData
 
 struct CoachScreen: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
     @Query(sort: \CoachMessage.createdAt) private var messages: [CoachMessage]
+    @Query(sort: \CoachConversation.updatedAt, order: .reverse) private var conversations: [CoachConversation]
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
@@ -18,6 +20,11 @@ struct CoachScreen: View {
     @State private var optimisticUserMessage: CoachDisplayMessage?
     @State private var optimisticCoachMessage: CoachDisplayMessage?
     @State private var composerFocusScrollRequest: Int = 0
+    @State private var showConversationHistory: Bool = false
+    @State private var didSelectHistoricalConversation: Bool = false
+    @AppStorage("activeCoachConversationID") private var activeCoachConversationIDString: String = ""
+
+    private let conversationIdleLimit: TimeInterval = 3 * 60 * 60
 
     private let suggestedQuestions = [
         "Should I do strength today?",
@@ -26,8 +33,22 @@ struct CoachScreen: View {
         "What is my focus tomorrow?"
     ]
 
+    private var activeConversationID: UUID? {
+        UUID(uuidString: activeCoachConversationIDString)
+    }
+
+    private var activeConversation: CoachConversation? {
+        guard let activeConversationID else { return nil }
+        return conversations.first { $0.id == activeConversationID }
+    }
+
+    private var activeMessages: [CoachMessage] {
+        guard let activeConversationID else { return [] }
+        return messages.filter { $0.conversationID == activeConversationID }
+    }
+
     private var displayedMessages: [CoachDisplayMessage] {
-        var displayMessages = messages.map { message in
+        var displayMessages = activeMessages.map { message in
             CoachDisplayMessage(id: message.id, role: message.role, content: message.content)
         }
 
@@ -95,14 +116,35 @@ struct CoachScreen: View {
             .navigationTitle("Coach")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button {
-                    refreshCoachAIConnectionState()
-                    normalizeCoachAIModel()
-                    showCoachMenu = true
-                } label: {
-                    Image(systemName: "gearshape.fill")
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showConversationHistory = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
+                    .disabled(isWaitingForAI)
+                    .accessibilityLabel("Coach Conversation History")
                 }
-                .accessibilityLabel("AI Coach Settings")
+
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        startNewConversation()
+                        Haptics.light()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                    }
+                    .disabled(isWaitingForAI)
+                    .accessibilityLabel("New Coach Chat")
+
+                    Button {
+                        refreshCoachAIConnectionState()
+                        normalizeCoachAIModel()
+                        showCoachMenu = true
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                    }
+                    .accessibilityLabel("AI Coach Settings")
+                }
             }
             .sheet(isPresented: $showCoachMenu, onDismiss: refreshCoachAIConnectionState) {
                 NavigationStack {
@@ -110,11 +152,30 @@ struct CoachScreen: View {
                         isAIEnabled: $isAIEnabled,
                         model: $coachAIModel,
                         hasSavedKey: $hasSavedCoachAIKey,
-                        hasMessages: messages.isEmpty == false,
-                        onClearChat: clearConversation
+                        hasMessages: activeMessages.isEmpty == false,
+                        onClearChat: clearCurrentConversation
                     )
                 }
                 .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showConversationHistory) {
+                NavigationStack {
+                    CoachConversationHistorySheet(
+                        conversations: conversations,
+                        messages: messages,
+                        activeConversationID: activeConversationID,
+                        onSelect: selectConversation,
+                        onNewConversation: startNewConversation
+                    )
+                }
+                .presentationDetents([.medium, .large])
+            }
+            .task {
+                prepareActiveConversation()
+            }
+            .onChange(of: scenePhase) {
+                guard scenePhase == .active else { return }
+                prepareActiveConversation()
             }
         }
     }
@@ -156,20 +217,126 @@ struct CoachScreen: View {
         }
     }
 
-    private func clearConversation() {
-        messages.forEach { context.delete($0) }
+    private func prepareActiveConversation() {
+        migrateLegacyMessagesIfNeeded()
+
+        if let activeConversation {
+            if shouldStartNewConversation(after: activeConversation) && didSelectHistoricalConversation == false {
+                startNewConversation()
+            }
+            return
+        }
+
+        guard let latestConversation = conversations.first else {
+            startNewConversation()
+            return
+        }
+
+        if shouldStartNewConversation(after: latestConversation) {
+            startNewConversation()
+        } else {
+            activeCoachConversationIDString = latestConversation.id.uuidString
+            didSelectHistoricalConversation = false
+        }
+    }
+
+    private func migrateLegacyMessagesIfNeeded() {
+        let legacyMessages = messages.filter { $0.conversationID == nil }
+        guard legacyMessages.isEmpty == false else { return }
+
+        let createdAt = legacyMessages.first?.createdAt ?? Date()
+        let updatedAt = legacyMessages.last?.createdAt ?? createdAt
+        let conversation = CoachConversation(
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            title: CoachConversationTitleBuilder.title(for: legacyMessages)
+        )
+
+        context.insert(conversation)
+        legacyMessages.forEach { $0.conversationID = conversation.id }
+
+        if activeCoachConversationIDString.isEmpty {
+            activeCoachConversationIDString = conversation.id.uuidString
+        }
+
+        try? context.save()
+    }
+
+    private func shouldStartNewConversation(after conversation: CoachConversation) -> Bool {
+        let now = Date()
+        if Calendar.current.isDate(conversation.updatedAt, inSameDayAs: now) == false {
+            return true
+        }
+
+        return now.timeIntervalSince(conversation.updatedAt) >= conversationIdleLimit
+    }
+
+    private func startNewConversation() {
+        activeCoachConversationIDString = ""
+        didSelectHistoricalConversation = false
+        question = ""
         optimisticUserMessage = nil
         optimisticCoachMessage = nil
+    }
+
+    private func selectConversation(_ conversation: CoachConversation) {
+        activeCoachConversationIDString = conversation.id.uuidString
+        didSelectHistoricalConversation = true
+        question = ""
+        optimisticUserMessage = nil
+        optimisticCoachMessage = nil
+    }
+
+    private func clearCurrentConversation() {
+        guard let activeConversationID else { return }
+
+        activeMessages.forEach { context.delete($0) }
+        if let activeConversation {
+            context.delete(activeConversation)
+        }
+
+        if UUID(uuidString: activeCoachConversationIDString) == activeConversationID {
+            activeCoachConversationIDString = ""
+        }
+
+        optimisticUserMessage = nil
+        optimisticCoachMessage = nil
+        question = ""
+        didSelectHistoricalConversation = false
         try? context.save()
+    }
+
+    private func conversationForSubmit(prompt: String) -> CoachConversation {
+        if let activeConversation {
+            if shouldStartNewConversation(after: activeConversation) && didSelectHistoricalConversation == false {
+                startNewConversation()
+            } else {
+                return activeConversation
+            }
+        }
+
+        let now = Date()
+        let conversation = CoachConversation(
+            createdAt: now,
+            updatedAt: now,
+            title: CoachConversationTitleBuilder.title(for: prompt)
+        )
+        context.insert(conversation)
+        activeCoachConversationIDString = conversation.id.uuidString
+        didSelectHistoricalConversation = false
+        return conversation
     }
 
     private func submit(_ prompt: String? = nil) {
         let rawQuestion = (prompt ?? question).trimmingCharacters(in: .whitespacesAndNewlines)
         guard rawQuestion.isEmpty == false, isWaitingForAI == false else { return }
 
+        let conversation = conversationForSubmit(prompt: rawQuestion)
+        let conversationID = conversation.id
+        let currentMessages = messages.filter { $0.conversationID == conversationID }
         let userMessageID = UUID()
         let optimisticMessage = CoachDisplayMessage(id: userMessageID, role: "user", content: rawQuestion)
-        let history = messages.suffix(10).map { message in
+        let history = currentMessages.suffix(10).map { message in
             CoachTranscriptMessage(role: message.role, content: message.content)
         }
 
@@ -179,7 +346,9 @@ struct CoachScreen: View {
             isWaitingForAI = true
         }
 
-        context.insert(CoachMessage(id: userMessageID, role: "user", content: rawQuestion))
+        conversation.updatedAt = Date()
+        conversation.title = CoachConversationTitleBuilder.title(for: currentMessages, adding: rawQuestion)
+        context.insert(CoachMessage(id: userMessageID, role: "user", content: rawQuestion, conversationID: conversationID))
         try? context.save()
         Haptics.light()
 
@@ -201,7 +370,8 @@ struct CoachScreen: View {
                 isWaitingForAI = false
             }
 
-            context.insert(CoachMessage(id: coachMessageID, role: "coach", content: answer))
+            conversation.updatedAt = Date()
+            context.insert(CoachMessage(id: coachMessageID, role: "coach", content: answer, conversationID: conversationID))
             try? context.save()
             Haptics.light()
         }
@@ -231,6 +401,128 @@ struct CoachScreen: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
             composerFocusScrollRequest += 1
         }
+    }
+}
+
+struct CoachConversationHistorySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var conversations: [CoachConversation]
+    var messages: [CoachMessage]
+    var activeConversationID: UUID?
+    var onSelect: (CoachConversation) -> Void
+    var onNewConversation: () -> Void
+
+    private var visibleConversations: [CoachConversation] {
+        conversations.filter { messageCount(for: $0) > 0 }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                Button {
+                    onNewConversation()
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.and.pencil")
+                            .font(.headline)
+                            .foregroundStyle(.black)
+                            .frame(width: 34, height: 34)
+                            .background(Color.green, in: Circle())
+
+                        Text("New Coach Chat")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+
+                if visibleConversations.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("No previous chats")
+                            .font(.headline)
+                        Text("Coach conversations will show here after you send a message.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                } else {
+                    ForEach(visibleConversations) { conversation in
+                        Button {
+                            onSelect(conversation)
+                            dismiss()
+                        } label: {
+                            CoachConversationHistoryRow(
+                                conversation: conversation,
+                                messageCount: messageCount(for: conversation),
+                                isActive: conversation.id == activeConversationID
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("Coach Chats")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            Button("Done") {
+                dismiss()
+            }
+        }
+    }
+
+    private func messageCount(for conversation: CoachConversation) -> Int {
+        messages.filter { $0.conversationID == conversation.id }.count
+    }
+}
+
+struct CoachConversationHistoryRow: View {
+    var conversation: CoachConversation
+    var messageCount: Int
+    var isActive: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: isActive ? "checkmark.circle.fill" : "bubble.left.and.bubble.right.fill")
+                .font(.headline)
+                .foregroundStyle(isActive ? .green : .secondary)
+                .frame(width: 34, height: 34)
+                .background((isActive ? Color.green : Color.white).opacity(0.12), in: Circle())
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(conversation.title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                Text(historyDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 6)
+        }
+        .padding()
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var historyDetail: String {
+        let date = conversation.updatedAt.formatted(date: .abbreviated, time: .shortened)
+        let countLabel = messageCount == 1 ? "1 message" : "\(messageCount) messages"
+        return "\(date) - \(countLabel)"
     }
 }
 
@@ -723,7 +1015,7 @@ struct CoachAIConnectionSheet: View {
                         onClearChat()
                         Haptics.success()
                     } label: {
-                        Label("Clear Chat", systemImage: "trash")
+                        Label("Clear Current Chat", systemImage: "trash")
                             .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .disabled(!hasMessages)
