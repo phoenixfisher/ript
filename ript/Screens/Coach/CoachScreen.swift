@@ -436,12 +436,12 @@ struct CoachConversationHistorySheet: View {
 
                         Spacer()
                     }
-                    .padding()
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
 
                 if visibleConversations.isEmpty {
+                    Divider().padding(.horizontal)
+                    
                     VStack(alignment: .leading, spacing: 8) {
                         Text("No previous chats")
                             .font(.headline)
@@ -449,11 +449,11 @@ struct CoachConversationHistorySheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    .padding()
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                 } else {
                     ForEach(visibleConversations) { conversation in
+                        Divider().padding(.horizontal)
+                        
                         Button {
                             onSelect(conversation)
                             dismiss()
@@ -491,17 +491,11 @@ struct CoachConversationHistoryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: isActive ? "checkmark.circle.fill" : "bubble.left.and.bubble.right.fill")
-                .font(.headline)
-                .foregroundStyle(isActive ? .green : .secondary)
-                .frame(width: 34, height: 34)
-                .background((isActive ? Color.green : Color.white).opacity(0.12), in: Circle())
-
             VStack(alignment: .leading, spacing: 5) {
                 Text(conversation.title)
-                    .font(.headline)
+                    .font(.body)
                     .foregroundStyle(.primary)
-                    .lineLimit(2)
+                    .lineLimit(1)
 
                 Text(historyDetail)
                     .font(.caption)
@@ -515,8 +509,6 @@ struct CoachConversationHistoryRow: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 6)
         }
-        .padding()
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var historyDetail: String {
