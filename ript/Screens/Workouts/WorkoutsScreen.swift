@@ -2,11 +2,13 @@ import SwiftUI
 import SwiftData
 
 struct WorkoutsScreen: View {
+    @Environment(\.modelContext) private var context
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Workout.name) private var workouts: [Workout]
     @State private var selectedWeekLabel: String?
     @State private var selectedMonthStart: Date?
     @State private var scheduleViewMode: TrainingScheduleViewMode = .week
+    @State private var showCreatePlanSheet = false
 
     var body: some View {
         NavigationStack {
@@ -173,6 +175,26 @@ struct WorkoutsScreen: View {
                 .padding()
             }
             .navigationTitle("Workouts")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showCreatePlanSheet = true
+                        Haptics.light()
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel("Create Training Plan")
+                }
+            }
+            .sheet(isPresented: $showCreatePlanSheet) {
+                CreatePlanSheet { sessions, replaceFutureSessions, startDate in
+                    saveGeneratedPlan(
+                        sessions,
+                        replaceFutureSessions: replaceFutureSessions,
+                        startDate: startDate
+                    )
+                }
+            }
         }
     }
 
@@ -411,6 +433,25 @@ struct WorkoutsScreen: View {
         }
 
         Haptics.light()
+    }
+
+    private func saveGeneratedPlan(_ sessions: [TrainingSession], replaceFutureSessions: Bool, startDate: Date) {
+        let cutoffDate = Calendar.current.startOfDay(for: startDate)
+
+        if replaceFutureSessions {
+            trainingSessions
+                .filter { $0.date >= cutoffDate && $0.isCompleted == false }
+                .forEach { context.delete($0) }
+        }
+
+        sessions.forEach { context.insert($0) }
+        try? context.save()
+
+        guard let firstSession = sessions.first else { return }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedWeekLabel = firstSession.weekLabel
+            selectedMonthStart = monthStart(for: firstSession.date)
+        }
     }
 
     private func monthStart(for date: Date) -> Date {
