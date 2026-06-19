@@ -12,7 +12,11 @@ struct SampleDataSeeder {
     static func resetTrainingPlan(context: ModelContext) {
         let existing = (try? context.fetch(FetchDescriptor<TrainingSession>())) ?? []
         existing.forEach { context.delete($0) }
-        triathlonPlan.forEach { context.insert($0) }
+
+        let existingPlans = (try? context.fetch(FetchDescriptor<TrainingPlan>())) ?? []
+        existingPlans.forEach { context.delete($0) }
+
+        insertSampleTrainingPlan(context: context)
         try? context.save()
     }
 
@@ -73,9 +77,73 @@ struct SampleDataSeeder {
 
     private static func seedTrainingPlan(context: ModelContext) {
         let existing = (try? context.fetch(FetchDescriptor<TrainingSession>())) ?? []
-        guard existing.isEmpty else { return }
+        let existingPlans = (try? context.fetch(FetchDescriptor<TrainingPlan>())) ?? []
 
-        triathlonPlan.forEach { context.insert($0) }
+        if existing.isEmpty {
+            insertSampleTrainingPlan(context: context)
+            return
+        }
+
+        if existingPlans.isEmpty {
+            guard let plan = makeTrainingPlan(
+                name: "Current Training Plan",
+                sessions: existing,
+                goalTitle: "Triathlon",
+                targetTitle: "Olympic Triathlon"
+            ) else { return }
+
+            existing.forEach { session in
+                session.planID = plan.id
+                session.planName = plan.name
+            }
+            context.insert(plan)
+        }
+    }
+
+    private static func insertSampleTrainingPlan(context: ModelContext) {
+        let sessions = triathlonPlan
+        guard let plan = makeTrainingPlan(
+            name: "Sample Triathlon Build",
+            sessions: sessions,
+            goalTitle: "Triathlon",
+            targetTitle: "Olympic Triathlon"
+        ) else { return }
+
+        sessions.forEach { session in
+            session.planID = plan.id
+            session.planName = plan.name
+            context.insert(session)
+        }
+        context.insert(plan)
+    }
+
+    private static func makeTrainingPlan(
+        name: String,
+        sessions: [TrainingSession],
+        goalTitle: String,
+        targetTitle: String?
+    ) -> TrainingPlan? {
+        let sortedSessions = sessions.sorted { $0.date < $1.date }
+        guard let firstDate = sortedSessions.first?.date,
+              let lastDate = sortedSessions.last?.date else { return nil }
+
+        let scheduledMinutes = sortedSessions.reduce(0) { $0 + $1.scheduledMinutes }
+        let fallbackMinutes = sortedSessions.filter { session in
+            session.segments.contains { $0.kind == .rest && $0.priority == .required } == false
+        }.count * 60
+        let estimatedLoad = sortedSessions.reduce(0) { $0 + $1.estimatedLoad }
+        let fallbackLoad = Int((Double(fallbackMinutes) * 0.65).rounded())
+
+        return TrainingPlan(
+            name: name,
+            startDate: firstDate,
+            endDate: lastDate,
+            goalTitle: goalTitle,
+            targetTitle: targetTitle,
+            weekCount: Set(sortedSessions.map(\.weekLabel)).count,
+            scheduledMinutes: scheduledMinutes > 0 ? scheduledMinutes : fallbackMinutes,
+            estimatedLoad: estimatedLoad > 0 ? estimatedLoad : fallbackLoad
+        )
     }
 
     private static var triathlonPlan: [TrainingSession] {

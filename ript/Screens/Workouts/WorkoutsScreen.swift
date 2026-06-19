@@ -3,8 +3,10 @@ import SwiftData
 
 struct WorkoutsScreen: View {
     @Environment(\.modelContext) private var context
+    @Query(sort: \TrainingPlan.createdAt, order: .reverse) private var trainingPlans: [TrainingPlan]
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Workout.name) private var workouts: [Workout]
+    @State private var selectedPlanID: UUID?
     @State private var selectedWeekLabel: String?
     @State private var selectedMonthStart: Date?
     @State private var scheduleViewMode: TrainingScheduleViewMode = .week
@@ -40,6 +42,10 @@ struct WorkoutsScreen: View {
                             }
                             .buttonStyle(.plain)
                         }
+                    }
+
+                    if trainingPlans.isEmpty == false {
+                        planHistorySection
                     }
 
                     if visibleSessions.isEmpty == false {
@@ -187,8 +193,10 @@ struct WorkoutsScreen: View {
                 }
             }
             .sheet(isPresented: $showCreatePlanSheet) {
-                CreatePlanSheet { sessions, replaceFutureSessions, startDate in
+                CreatePlanSheet(initialInput: initialPlanInput) { planName, input, sessions, replaceFutureSessions, startDate in
                     saveGeneratedPlan(
+                        named: planName,
+                        input: input,
                         sessions,
                         replaceFutureSessions: replaceFutureSessions,
                         startDate: startDate
@@ -198,25 +206,121 @@ struct WorkoutsScreen: View {
         }
     }
 
+    private var planHistorySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Plans")
+                    .font(.headline)
+                Spacer()
+                if let activePlan {
+                    Text(activePlan.name)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(trainingPlans) { plan in
+                        Button {
+                            selectPlan(plan)
+                        } label: {
+                            PlanHistoryCard(
+                                plan: plan,
+                                sessions: sessions(for: plan),
+                                isSelected: activePlan?.id == plan.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    private var activePlan: TrainingPlan? {
+        if let selectedPlanID,
+           let selected = trainingPlans.first(where: { $0.id == selectedPlanID }) {
+            return selected
+        }
+
+        return defaultPlan
+    }
+
+    private var defaultPlan: TrainingPlan? {
+        let today = Calendar.current.startOfDay(for: Date())
+
+        if let plan = trainingPlans.first(where: { plan in
+            trainingSessions.contains { session in
+                session.planID == plan.id && session.date >= today
+            }
+        }) {
+            return plan
+        }
+
+        return trainingPlans.first
+    }
+
+    private var activeTrainingSessions: [TrainingSession] {
+        guard let activePlan else {
+            return trainingSessions
+        }
+
+        return trainingSessions.filter { $0.planID == activePlan.id }
+    }
+
     private var todaysSession: TrainingSession? {
-        trainingSessions.first { Calendar.current.isDateInToday($0.date) }
+        activeTrainingSessions.first { Calendar.current.isDateInToday($0.date) }
     }
 
     private var nextSession: TrainingSession? {
         let today = Calendar.current.startOfDay(for: Date())
-        return trainingSessions.first { $0.date >= today }
+        return activeTrainingSessions.first { $0.date >= today }
+    }
+
+    private var initialPlanInput: PlanSetupInput {
+        var input = PlanSetupInput()
+        input.readiness = recommendedPlanReadiness
+        return input
+    }
+
+    private var recommendedPlanReadiness: TrainingPlanReadiness {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let lookbackStart = calendar.date(byAdding: .day, value: -14, to: today) ?? today
+        let recentSessions = trainingSessions.filter { session in
+            session.date >= lookbackStart && session.date < today && isRestSession(session) == false
+        }
+
+        guard recentSessions.isEmpty == false else { return .steady }
+
+        let missedCount = recentSessions.filter { $0.isCompleted == false }.count
+        let completedCount = recentSessions.filter(\.isCompleted).count
+        let hardCount = recentSessions.filter { $0.effortRating == "Hard" }.count
+
+        if missedCount >= 2 || hardCount >= 2 {
+            return .recovery
+        }
+
+        if completedCount >= max(3, recentSessions.count - 1) {
+            return .build
+        }
+
+        return .steady
     }
 
     private var weekSessions: [TrainingSession] {
         guard let label = activeWeekLabel else { return [] }
-        return trainingSessions
+        return activeTrainingSessions
             .filter { $0.weekLabel == label }
             .sorted { $0.date < $1.date }
     }
 
     private var monthSessions: [TrainingSession] {
         guard let activeMonthStart else { return [] }
-        return trainingSessions
+        return activeTrainingSessions
             .filter { monthStart(for: $0.date) == activeMonthStart }
             .sorted { $0.date < $1.date }
     }
@@ -257,7 +361,7 @@ struct WorkoutsScreen: View {
 //    }
 
     private var weekLabels: [String] {
-        Dictionary(grouping: trainingSessions, by: \.weekLabel)
+        Dictionary(grouping: activeTrainingSessions, by: \.weekLabel)
             .sorted { lhs, rhs in
                 let lhsDate = lhs.value.map(\.date).min() ?? .distantFuture
                 let rhsDate = rhs.value.map(\.date).min() ?? .distantFuture
@@ -267,7 +371,7 @@ struct WorkoutsScreen: View {
     }
 
     private var monthStarts: [Date] {
-        Array(Set(trainingSessions.map { monthStart(for: $0.date) }))
+        Array(Set(activeTrainingSessions.map { monthStart(for: $0.date) }))
             .sorted()
     }
 
@@ -301,7 +405,7 @@ struct WorkoutsScreen: View {
             return nil
         }
 
-        return trainingSessions.first { todayWeek.contains($0.date) }?.weekLabel
+        return activeTrainingSessions.first { todayWeek.contains($0.date) }?.weekLabel
     }
 
     private var scheduleDateRangeText: String {
@@ -389,7 +493,7 @@ struct WorkoutsScreen: View {
                 selectedMonthStart = currentMonthStart
 
                 if let currentMonthStart,
-                   let firstSession = trainingSessions.first(where: { monthStart(for: $0.date) == currentMonthStart }) {
+                   let firstSession = activeTrainingSessions.first(where: { monthStart(for: $0.date) == currentMonthStart }) {
                     selectedWeekLabel = firstSession.weekLabel
                 }
             }
@@ -409,7 +513,7 @@ struct WorkoutsScreen: View {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             selectedWeekLabel = nextWeekLabel
 
-            if let firstSession = trainingSessions.first(where: { $0.weekLabel == nextWeekLabel }) {
+            if let firstSession = activeTrainingSessions.first(where: { $0.weekLabel == nextWeekLabel }) {
                 selectedMonthStart = monthStart(for: firstSession.date)
             }
         }
@@ -425,7 +529,7 @@ struct WorkoutsScreen: View {
         guard nextIndex != currentIndex else { return }
 
         let nextMonthStart = monthStarts[nextIndex]
-        guard let nextSession = trainingSessions.first(where: { monthStart(for: $0.date) == nextMonthStart }) else { return }
+        guard let nextSession = activeTrainingSessions.first(where: { monthStart(for: $0.date) == nextMonthStart }) else { return }
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
             selectedMonthStart = nextMonthStart
@@ -435,23 +539,92 @@ struct WorkoutsScreen: View {
         Haptics.light()
     }
 
-    private func saveGeneratedPlan(_ sessions: [TrainingSession], replaceFutureSessions: Bool, startDate: Date) {
-        let cutoffDate = Calendar.current.startOfDay(for: startDate)
+    private func selectPlan(_ plan: TrainingPlan) {
+        let planSessions = sessions(for: plan)
+        let todayWeekLabel = weekLabelContainingToday(in: planSessions)
 
-        if replaceFutureSessions {
-            trainingSessions
-                .filter { $0.date >= cutoffDate && $0.isCompleted == false }
-                .forEach { context.delete($0) }
-        }
-
-        sessions.forEach { context.insert($0) }
-        try? context.save()
-
-        guard let firstSession = sessions.first else { return }
         withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
-            selectedWeekLabel = firstSession.weekLabel
-            selectedMonthStart = monthStart(for: firstSession.date)
+            selectedPlanID = plan.id
+            selectedWeekLabel = todayWeekLabel ?? planSessions.first?.weekLabel
+            selectedMonthStart = (planSessions.first { Calendar.current.isDateInToday($0.date) } ?? planSessions.first).map { monthStart(for: $0.date) }
         }
+
+        Haptics.light()
+    }
+
+    private func sessions(for plan: TrainingPlan) -> [TrainingSession] {
+        trainingSessions
+            .filter { $0.planID == plan.id }
+            .sorted { $0.date < $1.date }
+    }
+
+    private func weekLabelContainingToday(in sessions: [TrainingSession]) -> String? {
+        guard let todayWeek = Calendar.current.dateInterval(of: .weekOfYear, for: Date()) else {
+            return nil
+        }
+
+        return sessions.first { todayWeek.contains($0.date) }?.weekLabel
+    }
+
+    private func isRestSession(_ session: TrainingSession) -> Bool {
+        session.segments.contains { segment in
+            segment.kind == .rest && segment.priority == .required
+        }
+    }
+
+    private func saveGeneratedPlan(
+        named planName: String,
+        input: PlanSetupInput,
+        _ sessions: [TrainingSession],
+        replaceFutureSessions: Bool,
+        startDate: Date
+    ) -> String? {
+        let cutoffDate = Calendar.current.startOfDay(for: startDate)
+        let sortedSessions = sessions.sorted { $0.date < $1.date }
+        guard let firstDate = sortedSessions.first?.date,
+              let lastDate = sortedSessions.last?.date else {
+            return "This plan does not have any sessions to save."
+        }
+
+        let plan = TrainingPlan(
+            name: planName,
+            startDate: firstDate,
+            endDate: lastDate,
+            goalTitle: input.goal.title,
+            targetTitle: input.planningAnchor == .targetDate ? input.eventTarget.title : nil,
+            weekCount: input.weekCount,
+            scheduledMinutes: sortedSessions.reduce(0) { $0 + $1.scheduledMinutes },
+            estimatedLoad: sortedSessions.reduce(0) { $0 + $1.estimatedLoad }
+        )
+
+        sortedSessions.forEach { session in
+            session.planID = plan.id
+            session.planName = plan.name
+        }
+
+        do {
+            try context.transaction {
+                if replaceFutureSessions {
+                    trainingSessions
+                        .filter { $0.date >= cutoffDate && $0.isCompleted == false }
+                        .forEach { context.delete($0) }
+                }
+
+                context.insert(plan)
+                sortedSessions.forEach { context.insert($0) }
+            }
+        } catch {
+            context.rollback()
+            return error.localizedDescription
+        }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.86)) {
+            selectedPlanID = plan.id
+            selectedWeekLabel = sortedSessions.first?.weekLabel
+            selectedMonthStart = sortedSessions.first.map { monthStart(for: $0.date) }
+        }
+
+        return nil
     }
 
     private func monthStart(for date: Date) -> Date {
@@ -759,8 +932,62 @@ struct TrainingWeekRow: View {
     }
 }
 
+struct PlanHistoryCard: View {
+    var plan: TrainingPlan
+    var sessions: [TrainingSession]
+    var isSelected: Bool
+
+    private var completedCount: Int {
+        sessions.filter(\.isCompleted).count
+    }
+
+    private var dateRangeText: String {
+        "\(plan.startDate.formatted(.dateTime.month(.abbreviated).day()))-\(plan.endDate.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private var hoursText: String {
+        let hours = Double(plan.scheduledMinutes) / 60
+        return hours.formatted(.number.precision(.fractionLength(hours < 10 ? 1 : 0))) + "h"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "calendar")
+                    .foregroundStyle(isSelected ? .green : .secondary)
+
+                Text(plan.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+            }
+
+            Text(dateRangeText)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+
+            HStack(spacing: 10) {
+                Label("\(completedCount)/\(sessions.count)", systemImage: "checkmark.circle")
+                Label(hoursText, systemImage: "clock")
+                Label("\(plan.estimatedLoad)", systemImage: "gauge.with.dots.needle.67percent")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        .frame(width: 210, alignment: .leading)
+        .background(isSelected ? Color.green.opacity(0.13) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(isSelected ? Color.green.opacity(0.75) : Color.clear, lineWidth: 1)
+        }
+    }
+}
+
 struct TrainingSessionDetail: View {
     @Environment(\.modelContext) private var context
+    @Query(sort: \Workout.name) private var workouts: [Workout]
     var session: TrainingSession
 
     private let effortOptions = ["Easy", "Good", "Hard"]
@@ -799,6 +1026,22 @@ struct TrainingSessionDetail: View {
                     }
                 }
 
+                if relatedWorkouts.isEmpty == false {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Related Workouts")
+                            .font(.headline)
+
+                        ForEach(relatedWorkouts) { workout in
+                            NavigationLink {
+                                WorkoutDetail(workout: workout)
+                            } label: {
+                                WorkoutLibraryRow(workout: workout)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Effort")
                         .font(.headline)
@@ -824,6 +1067,12 @@ struct TrainingSessionDetail: View {
         }
         .navigationTitle(session.date.formatted(.dateTime.weekday().month().day()))
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var relatedWorkouts: [Workout] {
+        let linkedNames = Set(session.segments.compactMap(\.linkedWorkoutName))
+        guard linkedNames.isEmpty == false else { return [] }
+        return workouts.filter { linkedNames.contains($0.name) }
     }
 
     private var effortBinding: Binding<String> {
@@ -922,6 +1171,26 @@ struct TrainingSegmentRow: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.leading)
+
+                    HStack(spacing: 12) {
+                        if let duration = segment.durationMinutes, duration > 0 {
+                            Label("\(duration)m", systemImage: "clock")
+                        }
+
+                        Label(segment.intensity.title, systemImage: "speedometer")
+
+                        if segment.estimatedLoad > 0 {
+                            Label("Load \(segment.estimatedLoad)", systemImage: "gauge.with.dots.needle.67percent")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                    if let linkedWorkoutName = segment.linkedWorkoutName {
+                        Label(linkedWorkoutName, systemImage: "dumbbell.fill")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding()
