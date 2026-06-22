@@ -5,6 +5,7 @@ struct CoachContext {
     var nextSession: TrainingSession?
     var todaysReflection: Reflection?
     var todaysDay: Day?
+    var todaysHealthSummary: HealthDailySummary?
     var weekSessions: [TrainingSession]
     var fuelProfile: FuelProfile
     var mealPlan: SuggestedMealPlan
@@ -20,6 +21,7 @@ struct CoachContext {
             topPriorities: topPriorities,
             guardrails: guardrailRows,
             workoutRows: workoutRows,
+            healthRows: healthRows,
             mealRows: mealRows,
             reflectionRows: reflectionRows,
             weekRows: weekRows
@@ -92,6 +94,10 @@ struct CoachContext {
             "Required: \(session.requiredSummary)",
             "\(session.completedSegmentCount)/\(session.segments.count) items checked"
         ]
+    }
+
+    var healthRows: [String] {
+        todaysHealthSummary?.coachRows ?? ["Apple Health context is off or no Health data has been imported for today."]
     }
 
     var mealRows: [String] {

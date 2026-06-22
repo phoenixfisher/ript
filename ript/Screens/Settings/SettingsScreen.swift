@@ -8,6 +8,8 @@ struct SettingsScreen: View {
     @Query(sort: \CoachMessage.createdAt, order: .reverse) private var coachMessages: [CoachMessage]
     @Query(sort: \CoachConversation.updatedAt, order: .reverse) private var coachConversations: [CoachConversation]
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
+    @Query(sort: \HealthDailySummary.date, order: .reverse) private var healthSummaries: [HealthDailySummary]
+    @Query(sort: \HealthWorkout.startDate, order: .reverse) private var healthWorkouts: [HealthWorkout]
 
     @AppStorage("profileName") private var profileName: String = ""
     @AppStorage("primaryGoal") private var primaryGoal: String = "Tri performance + physique"
@@ -18,6 +20,8 @@ struct SettingsScreen: View {
     @AppStorage("currentPlanName") private var currentPlanName: String = "Olympic Triathlon Build"
     @AppStorage("trainingRaceDay") private var trainingRaceDay: String = "June 20"
     @AppStorage("planStrengthRule") private var planStrengthRule: String = "Add strength on lighter endurance days"
+    @AppStorage("healthKitIsConnected") private var healthKitIsConnected: Bool = false
+    @AppStorage("healthLastSyncAt") private var healthLastSyncAt: Double = 0
     @AppStorage("healthUseWorkouts") private var healthUseWorkouts: Bool = true
     @AppStorage("healthUseSleep") private var healthUseSleep: Bool = true
     @AppStorage("healthUseHRV") private var healthUseHRV: Bool = true
@@ -34,7 +38,8 @@ struct SettingsScreen: View {
     @AppStorage("streakReminderEnabled") private var streakReminderEnabled: Bool = false
     @AppStorage("activeCoachConversationID") private var activeCoachConversationIDString: String = ""
     @State private var showSeededToast = false
-    @State private var healthStatusMessage = "Not connected yet"
+    @State private var healthStatusMessage = ""
+    @State private var isSyncingHealth = false
     @State private var pendingDestructiveAction: SettingsDestructiveAction?
     @State private var showDestructiveConfirmation = false
 
@@ -111,21 +116,24 @@ struct SettingsScreen: View {
                 ) {
                     SettingsInfoRow(
                         title: "Status",
-                        detail: healthStatusMessage,
-                        systemImage: "heart.slash.fill",
-                        tint: .secondary
+                        detail: healthStatusDetail,
+                        systemImage: healthStatusIcon,
+                        tint: healthStatusTint
                     )
 
                     Button {
-                        showHealthComingSoon()
+                        Task {
+                            await connectAppleHealth()
+                        }
                     } label: {
-                        Label("Connect Apple Health", systemImage: "heart.text.square.fill")
+                        Label(healthActionTitle, systemImage: "heart.text.square.fill")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(isSyncingHealth || HealthKitService.isAvailable == false)
 
                     SettingsInfoRow(
-                        title: "Planned data",
+                        title: "Read-only import",
                         detail: "Workouts, sleep, HRV, resting HR, active energy, and body metrics.",
                         systemImage: "waveform.path.ecg",
                         tint: .red
@@ -141,7 +149,7 @@ struct SettingsScreen: View {
                     }
                     .font(.subheadline)
 
-                    Text("These toggles decide what Health data Ript can use after HealthKit is connected. The first implementation should stay read-only.")
+                    Text("Selected types are requested from Apple Health and saved locally for Workouts, Wellness, and Coach context.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -235,7 +243,7 @@ struct SettingsScreen: View {
 
                     SettingsInfoRow(
                         title: "Health data",
-                        detail: "When added, Health access should be optional and read-only by default.",
+                        detail: "Apple Health access is optional and read-only. Imported summaries stay on this device.",
                         systemImage: "hand.raised.fill",
                         tint: .green
                     )
@@ -314,6 +322,9 @@ struct SettingsScreen: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar(.hidden, for: .tabBar)
         .scrollDismissesKeyboard(.interactively)
+        .onAppear {
+            healthStatusMessage = defaultHealthStatusMessage
+        }
         .onChange(of: workoutReminderEnabled) { refreshNotificationSchedule() }
         .onChange(of: fuelReminderEnabled) { refreshNotificationSchedule() }
         .onChange(of: reflectReminderEnabled) { refreshNotificationSchedule() }
@@ -343,6 +354,64 @@ struct SettingsScreen: View {
         return build.map { "\(version) (\($0))" } ?? version
     }
 
+    private var healthPreferences: HealthImportPreferences {
+        HealthImportPreferences(
+            workouts: healthUseWorkouts,
+            sleep: healthUseSleep,
+            hrv: healthUseHRV,
+            restingHeartRate: healthUseRestingHR,
+            activeEnergy: healthUseActiveEnergy,
+            bodyMetrics: healthUseBodyMetrics
+        )
+    }
+
+    private var healthStatusDetail: String {
+        if healthStatusMessage.isEmpty == false {
+            return healthStatusMessage
+        }
+
+        return defaultHealthStatusMessage
+    }
+
+    private var defaultHealthStatusMessage: String {
+        guard HealthKitService.isAvailable else {
+            return "Health data is not available on this device."
+        }
+
+        guard healthKitIsConnected else {
+            return "Not connected yet"
+        }
+
+        let summaryCount = healthSummaries.count == 1 ? "1 day imported" : "\(healthSummaries.count) days imported"
+        let workoutCount = healthWorkouts.count == 1 ? "1 workout" : "\(healthWorkouts.count) workouts"
+        guard let lastHealthSyncDate else {
+            return "Connected. \(summaryCount), \(workoutCount)."
+        }
+
+        return "Connected. Last sync \(lastHealthSyncDate.formatted(date: .abbreviated, time: .shortened)). \(summaryCount), \(workoutCount)."
+    }
+
+    private var healthStatusIcon: String {
+        if HealthKitService.isAvailable == false { return "heart.slash.fill" }
+        if isSyncingHealth { return "arrow.triangle.2.circlepath" }
+        return healthKitIsConnected ? "heart.fill" : "heart.slash.fill"
+    }
+
+    private var healthStatusTint: Color {
+        if HealthKitService.isAvailable == false { return .secondary }
+        if isSyncingHealth { return .orange }
+        return healthKitIsConnected ? .green : .secondary
+    }
+
+    private var healthActionTitle: String {
+        if isSyncingHealth { return "Syncing Apple Health" }
+        return healthKitIsConnected ? "Refresh Apple Health" : "Connect Apple Health"
+    }
+
+    private var lastHealthSyncDate: Date? {
+        healthLastSyncAt > 0 ? Date(timeIntervalSince1970: healthLastSyncAt) : nil
+    }
+
     private var exportSummary: String {
         """
         Ript Settings Export
@@ -362,6 +431,8 @@ struct SettingsScreen: View {
 
         Data Counts
         Days: \(days.count)
+        Health summaries: \(healthSummaries.count)
+        Health workouts: \(healthWorkouts.count)
         Reflections: \(reflections.count)
         Coach messages: \(coachMessages.count)
 
@@ -386,19 +457,45 @@ struct SettingsScreen: View {
         showActionToast()
     }
 
-    private func showHealthComingSoon() {
-        showHealthStatus("HealthKit connection is ready for the next implementation step.")
+    @MainActor
+    private func connectAppleHealth() async {
+        guard isSyncingHealth == false else { return }
+
+        isSyncingHealth = true
+        healthStatusMessage = "Opening Apple Health permissions..."
+
+        do {
+            try await HealthKitService.shared.requestAuthorization(preferences: healthPreferences)
+            healthStatusMessage = "Importing recent Apple Health data..."
+
+            let summaries = try await HealthKitService.shared.loadDailySummaries(
+                daysBack: 14,
+                preferences: healthPreferences
+            )
+            try HealthSummaryStore.upsert(summaries, in: context)
+
+            let workouts = healthUseWorkouts ? try await HealthKitService.shared.loadHealthWorkouts(daysBack: 14) : []
+            try HealthWorkoutStore.upsert(workouts, in: context)
+
+            healthKitIsConnected = true
+            healthLastSyncAt = Date().timeIntervalSince1970
+            healthStatusMessage = importedHealthStatus(summaries: summaries, workouts: workouts)
+            Haptics.success()
+        } catch {
+            healthStatusMessage = error.localizedDescription
+        }
+
+        isSyncingHealth = false
     }
 
-    private func showHealthStatus(_ message: String) {
-        withAnimation {
-            healthStatusMessage = message
+    private func importedHealthStatus(summaries: [HealthDailySummaryValue], workouts: [HealthWorkoutValue]) -> String {
+        guard summaries.isEmpty == false || workouts.isEmpty == false else {
+            return "Connected, but no samples were returned for the selected types."
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            withAnimation {
-                healthStatusMessage = "Not connected yet"
-            }
-        }
+
+        let dayLabel = summaries.count == 1 ? "1 day" : "\(summaries.count) days"
+        let workoutLabel = workouts.count == 1 ? "1 workout" : "\(workouts.count) workouts"
+        return "Connected. Imported \(dayLabel) and \(workoutLabel)."
     }
 
     private func requestDestructive(_ action: SettingsDestructiveAction) {
@@ -433,6 +530,8 @@ struct SettingsScreen: View {
         let trainingItems = (try? context.fetch(FetchDescriptor<TrainingSession>())) ?? []
         let reflectionItems = (try? context.fetch(FetchDescriptor<Reflection>())) ?? []
         let bodyMetricItems = (try? context.fetch(FetchDescriptor<BodyMetric>())) ?? []
+        let healthSummaryItems = (try? context.fetch(FetchDescriptor<HealthDailySummary>())) ?? []
+        let healthWorkoutItems = (try? context.fetch(FetchDescriptor<HealthWorkout>())) ?? []
         let mealItems = (try? context.fetch(FetchDescriptor<MealIdea>())) ?? []
         let badgeItems = (try? context.fetch(FetchDescriptor<Badge>())) ?? []
         let coachConversationItems = (try? context.fetch(FetchDescriptor<CoachConversation>())) ?? []
@@ -443,11 +542,16 @@ struct SettingsScreen: View {
         trainingItems.forEach { context.delete($0) }
         reflectionItems.forEach { context.delete($0) }
         bodyMetricItems.forEach { context.delete($0) }
+        healthSummaryItems.forEach { context.delete($0) }
+        healthWorkoutItems.forEach { context.delete($0) }
         mealItems.forEach { context.delete($0) }
         badgeItems.forEach { context.delete($0) }
         coachConversationItems.forEach { context.delete($0) }
         coachMessageItems.forEach { context.delete($0) }
         activeCoachConversationIDString = ""
+        healthKitIsConnected = false
+        healthLastSyncAt = 0
+        healthStatusMessage = defaultHealthStatusMessage
 
         try? context.save()
         SampleDataSeeder.seed(context: context)

@@ -46,6 +46,7 @@ enum TrainingScheduleViewMode: String, CaseIterable, Identifiable {
 struct TrainingMonthCalendar: View {
     var monthStart: Date
     var sessions: [TrainingSession]
+    var healthWorkouts: [HealthWorkout] = []
 
     private let calendar = Calendar.current
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
@@ -68,15 +69,15 @@ struct TrainingMonthCalendar: View {
                             NavigationLink {
                                 TrainingSessionDetail(session: session)
                             } label: {
-                                TrainingCalendarDayCell(date: date, sessions: day.sessions)
+                                TrainingCalendarDayCell(date: date, sessions: day.sessions, healthWorkouts: day.healthWorkouts)
                             }
                             .buttonStyle(.plain)
                         } else {
-                            TrainingCalendarDayCell(date: date, sessions: day.sessions)
+                            TrainingCalendarDayCell(date: date, sessions: day.sessions, healthWorkouts: day.healthWorkouts)
                         }
                     } else {
                         Color.clear
-                            .frame(height: 58)
+                            .frame(height: 66)
                     }
                 }
             }
@@ -100,10 +101,12 @@ struct TrainingMonthCalendar: View {
         days += dayRange.compactMap { day -> TrainingCalendarDay? in
             guard let date = calendar.date(byAdding: .day, value: day - 1, to: monthStart) else { return nil }
             let daySessions = sessions.filter { calendar.isDate($0.date, inSameDayAs: date) }
+            let dayHealthWorkouts = healthWorkouts.filter { calendar.isDate($0.startDate, inSameDayAs: date) }
             return TrainingCalendarDay(
                 id: "day-\(date.timeIntervalSinceReferenceDate)",
                 date: date,
-                sessions: daySessions
+                sessions: daySessions,
+                healthWorkouts: dayHealthWorkouts
             )
         }
 
@@ -125,6 +128,7 @@ struct TrainingCalendarDay: Identifiable {
     let id: String
     let date: Date?
     let sessions: [TrainingSession]
+    var healthWorkouts: [HealthWorkout] = []
 }
 
 struct TrainingCalendarWorkoutDot: Identifiable {
@@ -136,6 +140,7 @@ struct TrainingCalendarWorkoutDot: Identifiable {
 struct TrainingCalendarDayCell: View {
     var date: Date
     var sessions: [TrainingSession]
+    var healthWorkouts: [HealthWorkout] = []
 
     private var calendar: Calendar {
         Calendar.current
@@ -187,7 +192,7 @@ struct TrainingCalendarDayCell: View {
             .frame(maxWidth: .infinity, minHeight: 8, alignment: .leading)
         }
         .padding(7)
-        .frame(height: 58)
+        .frame(height: 66)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(cellBackground, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .overlay(alignment: .topTrailing) {
@@ -198,11 +203,31 @@ struct TrainingCalendarDayCell: View {
                     .padding(7)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if healthWorkouts.isEmpty == false {
+                HStack(spacing: 2) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 7, weight: .bold))
+                    Text("\(healthWorkouts.count)")
+                        .font(.system(size: 8, weight: .bold))
+                        .monospacedDigit()
+                }
+                .foregroundStyle(.red)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Color.red.opacity(0.16), in: Capsule())
+                .padding(5)
+            }
+        }
     }
 
     private var cellBackground: Color {
         if isToday {
             return .green.opacity(0.2)
+        }
+
+        if sessions.isEmpty && healthWorkouts.isEmpty == false {
+            return .red.opacity(0.08)
         }
 
         return sessions.isEmpty ? Color.white.opacity(0.04) : Color.white.opacity(0.08)

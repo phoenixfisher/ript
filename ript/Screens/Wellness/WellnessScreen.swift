@@ -12,6 +12,7 @@ struct WellnessScreen: View {
     @Binding var selectedSection: WellnessSection
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
+    @Query(sort: \HealthDailySummary.date, order: .reverse) private var healthSummaries: [HealthDailySummary]
 
     init(selectedSection: Binding<WellnessSection> = .constant(.fuel)) {
         _selectedSection = selectedSection
@@ -24,7 +25,8 @@ struct WellnessScreen: View {
                     WellnessSummaryCard(
                         session: todaysSession,
                         fuelProfile: fuelProfile,
-                        reflection: todaysReflection
+                        reflection: todaysReflection,
+                        healthSummary: todaysHealthSummary
                     )
 
                     Picker("Wellness", selection: $selectedSection) {
@@ -55,6 +57,10 @@ struct WellnessScreen: View {
 
     private var todaysReflection: Reflection? {
         reflections.first { Calendar.current.isDateInToday($0.date) }
+    }
+
+    private var todaysHealthSummary: HealthDailySummary? {
+        healthSummaries.first { Calendar.current.isDateInToday($0.date) }
     }
 
     private var fuelProfile: FuelProfile {

@@ -4,6 +4,7 @@ struct WellnessSummaryCard: View {
     var session: TrainingSession?
     var fuelProfile: FuelProfile
     var reflection: Reflection?
+    var healthSummary: HealthDailySummary?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -32,6 +33,13 @@ struct WellnessSummaryCard: View {
                 systemImage: "book.closed.fill",
                 tint: journalTint
             )
+
+            WellnessSummaryRow(
+                title: "Health",
+                value: healthLabel,
+                systemImage: "heart.text.square.fill",
+                tint: healthTint
+            )
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -54,6 +62,14 @@ struct WellnessSummaryCard: View {
         case "Missed": return .orange
         default: return .purple
         }
+    }
+
+    private var healthLabel: String {
+        healthSummary?.wellnessSummaryText ?? "Connect in Settings"
+    }
+
+    private var healthTint: Color {
+        healthSummary == nil ? .secondary : .red
     }
 }
 

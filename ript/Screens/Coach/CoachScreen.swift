@@ -9,6 +9,7 @@ struct CoachScreen: View {
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
     @Query(sort: \Day.date, order: .reverse) private var days: [Day]
+    @Query(sort: \HealthDailySummary.date, order: .reverse) private var healthSummaries: [HealthDailySummary]
     @Query(sort: \MealIdea.title) private var meals: [MealIdea]
     @State private var question: String = ""
     @State private var showCoachMenu: Bool = false
@@ -16,6 +17,7 @@ struct CoachScreen: View {
     @AppStorage("coachAIEnabled") private var isAIEnabled: Bool = false
     @AppStorage("coachAIModel") private var coachAIModel: String = CoachAIResponseMode.balanced.model
     @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
+    @AppStorage("coachUseHealthContext") private var coachUseHealthContext: Bool = true
     @State private var hasSavedCoachAIKey: Bool = CoachAIKeychain.hasAPIKey
     @State private var optimisticUserMessage: CoachDisplayMessage?
     @State private var optimisticCoachMessage: CoachDisplayMessage?
@@ -186,6 +188,7 @@ struct CoachScreen: View {
         let nextSession = trainingSessions.first { $0.date >= today }
         let todaysReflection = reflections.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
         let todaysDay = days.first { Calendar.current.isDate($0.date, inSameDayAs: today) }
+        let todaysHealthSummary = coachUseHealthContext ? healthSummaries.first { Calendar.current.isDate($0.date, inSameDayAs: today) } : nil
         let anchor = todaysSession ?? nextSession
         let weekSessions = anchor.map { session in
             trainingSessions.filter { $0.weekLabel == session.weekLabel }
@@ -198,6 +201,7 @@ struct CoachScreen: View {
             nextSession: nextSession,
             todaysReflection: todaysReflection,
             todaysDay: todaysDay,
+            todaysHealthSummary: todaysHealthSummary,
             weekSessions: weekSessions,
             fuelProfile: fuelProfile,
             mealPlan: mealPlan

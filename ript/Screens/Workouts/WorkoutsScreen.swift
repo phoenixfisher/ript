@@ -6,11 +6,14 @@ struct WorkoutsScreen: View {
     @Query(sort: \TrainingPlan.createdAt, order: .reverse) private var trainingPlans: [TrainingPlan]
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Workout.name) private var workouts: [Workout]
+    @Query(sort: \HealthWorkout.startDate, order: .reverse) private var healthWorkouts: [HealthWorkout]
     @State private var selectedPlanID: UUID?
     @State private var selectedWeekLabel: String?
     @State private var selectedMonthStart: Date?
     @State private var scheduleViewMode: TrainingScheduleViewMode = .week
     @State private var showCreatePlanSheet = false
+    @AppStorage("distanceUnit") private var distanceUnit: String = "Miles"
+    @AppStorage("healthUseWorkouts") private var healthUseWorkouts: Bool = true
 
     var body: some View {
         NavigationStack {
@@ -28,6 +31,32 @@ struct WorkoutsScreen: View {
                                 TodayTrainingCard(session: session)
                             }
                             .buttonStyle(.plain)
+
+                            if todaysHealthWorkouts.isEmpty == false {
+                                TodayHealthWorkoutsCard(
+                                    session: session,
+                                    workouts: todaysHealthWorkouts,
+                                    distanceUnit: distanceUnit,
+                                    canMatchToPlan: canMatchTodaysHealthWorkouts(to: session),
+                                    onMatchToPlan: {
+                                        matchTodaysHealthWorkouts(to: session)
+                                    }
+                                )
+                            }
+                        }
+                    } else if todaysHealthWorkouts.isEmpty == false {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Today")
+                                .font(.title2)
+                                .bold()
+
+                            TodayHealthWorkoutsCard(
+                                session: nil,
+                                workouts: todaysHealthWorkouts,
+                                distanceUnit: distanceUnit,
+                                canMatchToPlan: false,
+                                onMatchToPlan: {}
+                            )
                         }
                     } else if let next = nextSession {
                         VStack(alignment: .leading, spacing: 10) {
@@ -47,6 +76,7 @@ struct WorkoutsScreen: View {
                     if trainingPlans.isEmpty == false {
                         planHistorySection
                     }
+
 
                     if visibleSessions.isEmpty == false {
                         VStack(alignment: .leading, spacing: 10) {
@@ -138,14 +168,23 @@ struct WorkoutsScreen: View {
                                             NavigationLink {
                                                 TrainingSessionDetail(session: session)
                                             } label: {
-                                                TrainingWeekRow(session: session, isToday: Calendar.current.isDateInToday(session.date))
+                                                TrainingWeekRow(
+                                                    session: session,
+                                                    isToday: Calendar.current.isDateInToday(session.date),
+                                                    healthWorkouts: healthWorkouts(on: session.date),
+                                                    distanceUnit: distanceUnit
+                                                )
                                             }
                                             .buttonStyle(.plain)
                                         }
                                     }
                                 case .month:
                                     if let activeMonthStart {
-                                        TrainingMonthCalendar(monthStart: activeMonthStart, sessions: monthSessions)
+                                        TrainingMonthCalendar(
+                                            monthStart: activeMonthStart,
+                                            sessions: monthSessions,
+                                            healthWorkouts: healthWorkouts(inMonthStartingAt: activeMonthStart)
+                                        )
                                     }
                                 }
                             }
@@ -278,6 +317,14 @@ struct WorkoutsScreen: View {
     private var nextSession: TrainingSession? {
         let today = Calendar.current.startOfDay(for: Date())
         return activeTrainingSessions.first { $0.date >= today }
+    }
+
+    private var todaysHealthWorkouts: [HealthWorkout] {
+        visibleHealthWorkouts.filter { Calendar.current.isDateInToday($0.startDate) }
+    }
+
+    private var visibleHealthWorkouts: [HealthWorkout] {
+        healthUseWorkouts ? healthWorkouts : []
     }
 
     private var initialPlanInput: PlanSetupInput {
@@ -569,6 +616,94 @@ struct WorkoutsScreen: View {
     private func isRestSession(_ session: TrainingSession) -> Bool {
         session.segments.contains { segment in
             segment.kind == .rest && segment.priority == .required
+        }
+    }
+
+    private func healthWorkouts(on date: Date) -> [HealthWorkout] {
+        visibleHealthWorkouts.filter { Calendar.current.isDate($0.startDate, inSameDayAs: date) }
+    }
+
+    private func healthWorkouts(inMonthStartingAt monthStartDate: Date) -> [HealthWorkout] {
+        visibleHealthWorkouts.filter { monthStart(for: $0.startDate) == monthStartDate }
+    }
+
+    private func canMatchTodaysHealthWorkouts(to session: TrainingSession) -> Bool {
+        guard session.isCompleted == false else { return false }
+        return todaysHealthWorkouts.contains { canApply($0, to: session) }
+    }
+
+    private func canApply(_ workout: HealthWorkout, to session: TrainingSession) -> Bool {
+        guard Calendar.current.isDate(workout.startDate, inSameDayAs: session.date),
+              workout.matchedTrainingSessionID == nil else { return false }
+
+        let workoutKinds = workout.matchingTrainingKinds
+        guard workoutKinds.isEmpty == false else { return false }
+
+        return session.segments.contains { segment in
+            workoutKinds.contains(segment.kind) && segment.isCompleted == false
+        }
+    }
+
+    private func matchTodaysHealthWorkouts(to session: TrainingSession) {
+        let matchingWorkouts = todaysHealthWorkouts.filter { canApply($0, to: session) }
+        guard matchingWorkouts.isEmpty == false else { return }
+
+        var updatedSegments = session.segments
+        let workoutKinds = Set(matchingWorkouts.flatMap { $0.matchingTrainingKinds })
+        let requiredMatches = updatedSegments.indices.filter { index in
+            updatedSegments[index].priority == .required && workoutKinds.contains(updatedSegments[index].kind)
+        }
+        let matchingIndexes = requiredMatches.isEmpty ? updatedSegments.indices.filter { index in
+            workoutKinds.contains(updatedSegments[index].kind)
+        } : requiredMatches
+
+        guard matchingIndexes.isEmpty == false else { return }
+
+        matchingIndexes.forEach { index in
+            updatedSegments[index].isCompleted = true
+        }
+        session.segments = updatedSegments
+
+        if session.canComplete {
+            session.isCompleted = true
+            session.completedAt = Date()
+            creditWorkoutHabitIfNeeded(for: session)
+        }
+
+        matchingWorkouts.forEach { workout in
+            workout.matchedTrainingSessionID = session.id.uuidString
+        }
+
+        try? context.save()
+        Haptics.success()
+    }
+
+
+    private func creditWorkoutHabitIfNeeded(for session: TrainingSession) {
+        guard Calendar.current.isDateInToday(session.date) else { return }
+
+        let todayStart = Calendar.current.startOfDay(for: Date())
+        let descriptor = FetchDescriptor<Day>(predicate: #Predicate { $0.date == todayStart })
+        let day: Day
+
+        if let existing = try? context.fetch(descriptor).first {
+            day = existing
+        } else {
+            let newDay = Day(date: todayStart)
+            context.insert(newDay)
+            day = newDay
+        }
+
+        var habits = day.completedHabits
+        guard habits.contains(.coreOrWorkout) == false else { return }
+
+        habits.append(.coreOrWorkout)
+        day.completedHabits = habits
+        day.xpEarned += HabitType.coreOrWorkout.xpReward
+
+        if HabitType.allCases.allSatisfy({ habits.contains($0) }) && day.perfectDay == false {
+            day.perfectDay = true
+            day.xpEarned += 50
         }
     }
 

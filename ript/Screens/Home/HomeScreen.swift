@@ -11,12 +11,14 @@ struct HomeScreen: View {
     @Query(sort: \Day.date, order: .reverse) private var allDays: [Day]
     @Query(sort: \TrainingSession.date) private var trainingSessions: [TrainingSession]
     @Query(sort: \Reflection.date, order: .reverse) private var reflections: [Reflection]
+    @Query(sort: \HealthDailySummary.date, order: .reverse) private var healthSummaries: [HealthDailySummary]
     @Query(sort: \MealIdea.title) private var meals: [MealIdea]
 
     @ObservedObject var homeVM: HomeViewModel
     @Binding var selectedTab: AppTab
     @Binding var selectedWellnessSection: WellnessSection
     @AppStorage("homeCardOrder") private var homeCardOrderStorage: String = ""
+    @AppStorage("coachUseHealthContext") private var coachUseHealthContext: Bool = true
     @State private var showHomeCustomizer: Bool = false
     @State private var createdToday: Day?
 
@@ -93,6 +95,11 @@ struct HomeScreen: View {
         reflections.first { Calendar.current.isDateInToday($0.date) }
     }
 
+    private var todaysHealthSummary: HealthDailySummary? {
+        guard coachUseHealthContext else { return nil }
+        return healthSummaries.first { Calendar.current.isDateInToday($0.date) }
+    }
+
     private var coachContext: CoachContext {
         let anchor = activeSession
         let weekSessions = anchor.map { session in
@@ -106,6 +113,7 @@ struct HomeScreen: View {
             nextSession: nextSession,
             todaysReflection: todaysReflection,
             todaysDay: today,
+            todaysHealthSummary: todaysHealthSummary,
             weekSessions: weekSessions,
             fuelProfile: fuelProfile,
             mealPlan: mealPlan

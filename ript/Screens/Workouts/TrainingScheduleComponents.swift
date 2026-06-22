@@ -57,6 +57,8 @@ struct TodayTrainingCard: View {
 struct TrainingWeekRow: View {
     var session: TrainingSession
     var isToday: Bool
+    var healthWorkouts: [HealthWorkout] = []
+    var distanceUnit: String = "Miles"
 
     var body: some View {
         HStack(spacing: 12) {
@@ -79,6 +81,8 @@ struct TrainingWeekRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+
+                HealthWorkoutActualLine(workouts: healthWorkouts, distanceUnit: distanceUnit)
             }
 
             Spacer()
@@ -147,6 +151,9 @@ struct PlanHistoryCard: View {
 struct TrainingSessionDetail: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Workout.name) private var workouts: [Workout]
+    @Query(sort: \HealthWorkout.startDate, order: .reverse) private var healthWorkouts: [HealthWorkout]
+    @AppStorage("distanceUnit") private var distanceUnit: String = "Miles"
+    @AppStorage("healthUseWorkouts") private var healthUseWorkouts: Bool = true
     var session: TrainingSession
 
     private let effortOptions = ["Easy", "Good", "Hard"]
@@ -169,6 +176,7 @@ struct TrainingSessionDetail: View {
                         .foregroundStyle(.secondary)
                 }
 
+
                 ForEach(TrainingSegmentPriority.allCases) { priority in
                     let segments = session.segments.filter { $0.priority == priority }
                     if segments.isEmpty == false {
@@ -181,6 +189,22 @@ struct TrainingSessionDetail: View {
                                     toggleSegment(segment.id)
                                 }
                             }
+                        }
+                    }
+                }
+
+                if dayHealthWorkouts.isEmpty == false {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Actual Workouts")
+                            .font(.headline)
+
+                        ForEach(dayHealthWorkouts) { workout in
+                            HealthWorkoutRow(
+                                workout: workout,
+                                distanceUnit: distanceUnit,
+                                matchedLabel: matchedLabel(for: workout),
+                                showsDate: false
+                            )
                         }
                     }
                 }
@@ -232,6 +256,15 @@ struct TrainingSessionDetail: View {
         let linkedNames = Set(session.segments.compactMap(\.linkedWorkoutName))
         guard linkedNames.isEmpty == false else { return [] }
         return workouts.filter { linkedNames.contains($0.name) }
+    }
+
+    private var dayHealthWorkouts: [HealthWorkout] {
+        guard healthUseWorkouts else { return [] }
+        return healthWorkouts.filter { Calendar.current.isDate($0.startDate, inSameDayAs: session.date) }
+    }
+
+    private func matchedLabel(for workout: HealthWorkout) -> String? {
+        workout.matchedTrainingSessionID == session.id.uuidString ? "Matched" : nil
     }
 
     private var effortBinding: Binding<String> {

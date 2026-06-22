@@ -62,6 +62,7 @@ struct CoachPromptSnapshot {
     let topPriorities: [String]
     let guardrails: [String]
     let workoutRows: [String]
+    let healthRows: [String]
     let mealRows: [String]
     let reflectionRows: [String]
     let weekRows: [String]
@@ -79,6 +80,9 @@ struct CoachPromptSnapshot {
 
         Workout Context:
         \(workoutRows.map { "- \($0)" }.joined(separator: "\n"))
+
+        Apple Health Context:
+        \(healthRows.map { "- \($0)" }.joined(separator: "\n"))
 
         Meals and Fuel Context:
         \(mealRows.map { "- \($0)" }.joined(separator: "\n"))
