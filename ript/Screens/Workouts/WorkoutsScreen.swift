@@ -17,8 +17,9 @@ struct WorkoutsScreen: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
+            GeometryReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(alignment: .leading, spacing: 22) {
                     if let session = todaysSession {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Today")
@@ -216,8 +217,11 @@ struct WorkoutsScreen: View {
                             }
                         }
                     }
+                    }
+                    .padding()
+                    .frame(width: proxy.size.width, alignment: .leading)
                 }
-                .padding()
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
             }
             .navigationTitle("Workouts")
             .toolbar {

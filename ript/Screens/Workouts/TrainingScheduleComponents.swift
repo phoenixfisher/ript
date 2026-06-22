@@ -14,12 +14,14 @@ struct TodayTrainingCard: View {
                     Text(session.title)
                         .font(.title3)
                         .fontWeight(.bold)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(session.focus)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 Image(systemName: session.isCompleted ? "checkmark.seal.fill" : "chevron.right")
                     .foregroundStyle(session.isCompleted ? .green : .secondary)
@@ -40,7 +42,9 @@ struct TodayTrainingCard: View {
                             .foregroundStyle(segment.isCompleted ? .green : segment.kind.tint)
                         Text(segment.title)
                             .font(.subheadline)
-                        Spacer()
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Spacer(minLength: 8)
                         Text(segment.priority.title)
                             .font(.caption2)
                             .foregroundStyle(.secondary)

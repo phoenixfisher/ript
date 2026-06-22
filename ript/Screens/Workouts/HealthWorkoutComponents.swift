@@ -125,11 +125,13 @@ struct HealthWorkoutRow: View {
                     Text(workout.title)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
 
                     if let matchedLabel {
                         Text(matchedLabel)
                             .font(.caption2.weight(.semibold))
                             .foregroundStyle(.green)
+                            .lineLimit(1)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(Color.green.opacity(0.14), in: Capsule())
@@ -145,6 +147,7 @@ struct HealthWorkoutRow: View {
             Spacer(minLength: 0)
         }
         .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
