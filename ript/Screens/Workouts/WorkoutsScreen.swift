@@ -259,23 +259,21 @@ struct WorkoutsScreen: View {
                 }
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(trainingPlans) { plan in
-                        Button {
-                            selectPlan(plan)
-                        } label: {
-                            PlanHistoryCard(
-                                plan: plan,
-                                sessions: sessions(for: plan),
-                                isSelected: activePlan?.id == plan.id
-                            )
-                        }
-                        .buttonStyle(.plain)
+            VStack(spacing: 10) {
+                ForEach(trainingPlans) { plan in
+                    Button {
+                        selectPlan(plan)
+                    } label: {
+                        PlanHistoryCard(
+                            plan: plan,
+                            sessions: sessions(for: plan),
+                            isSelected: activePlan?.id == plan.id
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.vertical, 2)
             }
+            .padding(.vertical, 2)
         }
     }
 

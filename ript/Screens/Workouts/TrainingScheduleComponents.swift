@@ -139,7 +139,7 @@ struct PlanHistoryCard: View {
             .foregroundStyle(.secondary)
         }
         .padding()
-        .frame(width: 210, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(isSelected ? Color.green.opacity(0.13) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
