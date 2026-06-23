@@ -140,15 +140,11 @@ struct CoachBubble: View {
         isUser ? .black : .primary
     }
 
-    private var displayContent: String {
-        isUser ? content : content.removingCoachMarkdownSyntax
-    }
-
     var body: some View {
         HStack(alignment: .bottom) {
             if isUser { Spacer(minLength: 42) }
 
-            Text(displayContent)
+            Text(content)
                 .font(.subheadline)
                 .lineSpacing(2)
                 .foregroundStyle(textColor)
@@ -167,38 +163,6 @@ struct CoachBubble: View {
                 removal: .opacity
             )
         )
-    }
-}
-
-extension String {
-    var removingCoachMarkdownSyntax: String {
-        var cleaned = replacingOccurrences(of: "\r\n", with: "\n")
-        cleaned = cleaned.replacingOccurrences(of: "```", with: "")
-
-        let markerReplacements = [
-            "**": "",
-            "__": "",
-            "`": "",
-            "### ": "",
-            "## ": "",
-            "# ": ""
-        ]
-
-        for replacement in markerReplacements {
-            cleaned = cleaned.replacingOccurrences(of: replacement.key, with: replacement.value)
-        }
-
-        return cleaned
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { line in
-                String(line).replacingOccurrences(
-                    of: #"^\s*[-*]\s+"#,
-                    with: "",
-                    options: .regularExpression
-                )
-            }
-            .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
