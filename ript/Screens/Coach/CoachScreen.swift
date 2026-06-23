@@ -23,6 +23,7 @@ struct CoachScreen: View {
     @AppStorage("activeCoachConversationID") private var activeCoachConversationIDString: String = ""
 
     private let conversationIdleLimit: TimeInterval = 3 * 60 * 60
+    private let scrollBottomSpacerID = "coach-scroll-bottom-spacer"
 
     private let suggestedQuestions = [
         "Should I do strength today?",
@@ -83,9 +84,12 @@ struct CoachScreen: View {
                                 CoachTypingBubble()
                                     .id("typing")
                             }
+
+                            Color.clear
+                                .frame(height: 44)
+                                .id(scrollBottomSpacerID)
                         }
                         .padding()
-                        .padding(.bottom, 44)
                         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: displayedMessages.count)
                         .animation(.easeInOut(duration: 0.2), value: isWaitingForAI)
                     }
@@ -328,13 +332,7 @@ struct CoachScreen: View {
     private func scrollToLatest(with proxy: ScrollViewProxy) {
         DispatchQueue.main.async {
             withAnimation(.easeOut(duration: 0.24)) {
-                if isWaitingForAI {
-                    proxy.scrollTo("typing", anchor: .bottom)
-                } else if let last = displayedMessages.last {
-                    proxy.scrollTo(last.id, anchor: .bottom)
-                } else {
-                    proxy.scrollTo("opening", anchor: .bottom)
-                }
+                proxy.scrollTo(scrollBottomSpacerID, anchor: .bottom)
             }
         }
     }
