@@ -85,6 +85,7 @@ struct CoachScreen: View {
                             }
                         }
                         .padding()
+                        .padding(.bottom, 44)
                         .animation(.spring(response: 0.34, dampingFraction: 0.84), value: displayedMessages.count)
                         .animation(.easeInOut(duration: 0.2), value: isWaitingForAI)
                     }
@@ -101,7 +102,6 @@ struct CoachScreen: View {
                         scrollToLatest(with: proxy)
                     }
                 }
-                .padding(.bottom, 44)
 
                 CoachComposerBar(
                     question: $question,
