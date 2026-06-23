@@ -100,10 +100,10 @@ struct CoachComposerBar: View {
                         onFocusChange(isFocused)
                     }
                     .textFieldStyle(.plain)
-                    .lineLimit(1...8)
+                    .lineLimit(1...5)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18))
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
 
                 Button {
                     onSubmit(nil)
