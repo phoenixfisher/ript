@@ -100,10 +100,10 @@ struct CoachComposerBar: View {
                         onFocusChange(isFocused)
                     }
                     .textFieldStyle(.plain)
-                    .lineLimit(1...5)
+                    .lineLimit(isFocused ? 6 : 1)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 20))
+                    .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: 20))
 
                 Button {
                     onSubmit(nil)
@@ -111,9 +111,10 @@ struct CoachComposerBar: View {
                     Image(systemName: "arrow.up")
                         .font(.headline)
                         .foregroundStyle(.black)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 40, height: 40)
                         .background(Color.green.opacity(sendInvalid ? 0.3 : 1), in: Circle())
                 }
+                .glassEffect()
                 .disabled(sendInvalid)
             }
             .padding(.horizontal)

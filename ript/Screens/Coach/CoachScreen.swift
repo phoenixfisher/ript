@@ -65,7 +65,7 @@ struct CoachScreen: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
+            ZStack(alignment: .bottom) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 12) {
@@ -101,6 +101,7 @@ struct CoachScreen: View {
                         scrollToLatest(with: proxy)
                     }
                 }
+                .padding(.bottom, 44)
 
                 CoachComposerBar(
                     question: $question,
