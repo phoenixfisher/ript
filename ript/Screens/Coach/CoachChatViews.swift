@@ -140,18 +140,6 @@ struct CoachBubble: View {
         isUser ? .black : .primary
     }
 
-    private var bubbleShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            cornerRadii: .init(
-                topLeading: 20,
-                bottomLeading: isUser ? 20 : 6,
-                bottomTrailing: isUser ? 6 : 20,
-                topTrailing: 20
-            ),
-            style: .continuous
-        )
-    }
-
     private var displayContent: String {
         isUser ? content : content.removingCoachMarkdownSyntax
     }
@@ -166,13 +154,7 @@ struct CoachBubble: View {
                 .foregroundStyle(textColor)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(bubbleColor, in: bubbleShape)
-                .overlay {
-                    if isUser == false {
-                        bubbleShape
-                            .stroke(Color.white.opacity(0.07), lineWidth: 1)
-                    }
-                }
+                .background(bubbleColor, in: RoundedRectangle(cornerRadius: 20))
                 .fixedSize(horizontal: false, vertical: true)
 
             if isUser == false { Spacer(minLength: 42) }
