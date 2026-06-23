@@ -170,7 +170,7 @@ enum CoachReadiness {
 
 enum CoachBrain {
     static func openingBrief(for context: CoachContext) -> String {
-        "Today is a \(context.readiness.title.lowercased()) day. \(context.primarySummary) \(context.topPriorities.joined(separator: " "))"
+        "Today is a \(context.readiness.title.lowercased()) day. \(context.primarySummary) \(context.topPriorities.joined(separator: ". "))."
     }
 
     static func answer(_ question: String, context: CoachContext) -> String {
