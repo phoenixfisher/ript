@@ -12,13 +12,9 @@ struct CoachScreen: View {
     @Query(sort: \HealthDailySummary.date, order: .reverse) private var healthSummaries: [HealthDailySummary]
     @Query(sort: \MealIdea.title) private var meals: [MealIdea]
     @State private var question: String = ""
-    @State private var showCoachMenu: Bool = false
     @State private var isWaitingForAI: Bool = false
-    @AppStorage("coachAIEnabled") private var isAIEnabled: Bool = false
-    @AppStorage("coachAIModel") private var coachAIModel: String = CoachAIResponseMode.balanced.model
     @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
     @AppStorage("coachUseHealthContext") private var coachUseHealthContext: Bool = true
-    @State private var hasSavedCoachAIKey: Bool = CoachAIKeychain.hasAPIKey
     @State private var optimisticUserMessage: CoachDisplayMessage?
     @State private var optimisticCoachMessage: CoachDisplayMessage?
     @State private var composerFocusScrollRequest: Int = 0
@@ -128,7 +124,7 @@ struct CoachScreen: View {
                     .accessibilityLabel("Coach Conversation History")
                 }
 
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         startNewConversation()
                         Haptics.light()
@@ -137,28 +133,7 @@ struct CoachScreen: View {
                     }
                     .disabled(isWaitingForAI)
                     .accessibilityLabel("New Coach Chat")
-
-                    Button {
-                        refreshCoachAIConnectionState()
-                        normalizeCoachAIModel()
-                        showCoachMenu = true
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                    }
-                    .accessibilityLabel("AI Coach Settings")
                 }
-            }
-            .sheet(isPresented: $showCoachMenu, onDismiss: refreshCoachAIConnectionState) {
-                NavigationStack {
-                    CoachAIConnectionSheet(
-                        isAIEnabled: $isAIEnabled,
-                        model: $coachAIModel,
-                        hasSavedKey: $hasSavedCoachAIKey,
-                        hasMessages: activeMessages.isEmpty == false,
-                        onClearChat: clearCurrentConversation
-                    )
-                }
-                .presentationDetents([.medium])
             }
             .sheet(isPresented: $showConversationHistory) {
                 NavigationStack {
@@ -206,19 +181,6 @@ struct CoachScreen: View {
             fuelProfile: fuelProfile,
             mealPlan: mealPlan
         )
-    }
-
-    private func refreshCoachAIConnectionState() {
-        hasSavedCoachAIKey = CoachAIKeychain.hasAPIKey
-        if hasSavedCoachAIKey == false {
-            isAIEnabled = false
-        }
-    }
-
-    private func normalizeCoachAIModel() {
-        if CoachAIResponseMode.isSupportedModel(coachAIModel) == false {
-            coachAIModel = CoachAIResponseMode.balanced.model
-        }
     }
 
     private func prepareActiveConversation() {
@@ -289,25 +251,6 @@ struct CoachScreen: View {
         question = ""
         optimisticUserMessage = nil
         optimisticCoachMessage = nil
-    }
-
-    private func clearCurrentConversation() {
-        guard let activeConversationID else { return }
-
-        activeMessages.forEach { context.delete($0) }
-        if let activeConversation {
-            context.delete(activeConversation)
-        }
-
-        if UUID(uuidString: activeCoachConversationIDString) == activeConversationID {
-            activeCoachConversationIDString = ""
-        }
-
-        optimisticUserMessage = nil
-        optimisticCoachMessage = nil
-        question = ""
-        didSelectHistoricalConversation = false
-        try? context.save()
     }
 
     private func conversationForSubmit(prompt: String) -> CoachConversation {
@@ -406,4 +349,26 @@ struct CoachScreen: View {
             composerFocusScrollRequest += 1
         }
     }
+}
+
+#Preview {
+    CoachScreen()
+        .modelContainer(
+            for: [
+                Day.self,
+                Workout.self,
+                TrainingPlan.self,
+                TrainingSession.self,
+                Reflection.self,
+                BodyMetric.self,
+                HealthDailySummary.self,
+                HealthWorkout.self,
+                MealIdea.self,
+                Badge.self,
+                CoachConversation.self,
+                CoachMessage.self
+            ],
+            inMemory: true
+        )
+        .preferredColorScheme(.dark)
 }

@@ -65,8 +65,6 @@ struct CoachAIConnectionSheet: View {
     @Binding var isAIEnabled: Bool
     @Binding var model: String
     @Binding var hasSavedKey: Bool
-    var hasMessages: Bool = false
-    var onClearChat: (() -> Void)?
     @AppStorage("coachSuggestedMessagesEnabled") private var suggestedMessagesEnabled: Bool = true
     @State private var apiKey: String = ""
     @State private var isConnectionExpanded: Bool = false
@@ -226,16 +224,6 @@ struct CoachAIConnectionSheet: View {
                 .frame(minHeight: 58)
                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
 
-                if let onClearChat {
-                    Button(role: .destructive) {
-                        onClearChat()
-                        Haptics.success()
-                    } label: {
-                        Label("Clear Current Chat", systemImage: "trash")
-                            .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    .disabled(!hasMessages)
-                }
             }
             .padding()
             .frame(maxWidth: .infinity, alignment: .leading)
